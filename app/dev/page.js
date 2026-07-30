@@ -1,3 +1,4 @@
+import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 import Link from 'next/link';
 import BrandMark from '@/app/components/BrandMark';
 import { getAdminStats } from '@/lib/cards';
@@ -23,16 +24,31 @@ export const metadata = {
   robots: { index: false, follow: false },
 };
 
-/** Length-independent comparison, so the key cannot be guessed by timing. */
+/**
+ * Compare the supplied key against ADMIN_SECRET without leaking anything.
+ *
+ * The previous version returned early when the lengths differed, which is a
+ * length oracle: an attacker can find the secret's length by timing, then only
+ * guess strings of that length. HMAC-ing both sides first fixes it properly —
+ * both digests are always 32 bytes, so timingSafeEqual is fed equal-length
+ * buffers no matter what was typed, and the comparison time carries no
+ * information about the secret at all.
+ *
+ * TRADEOFF, kept deliberately: the key travels in the query string, so it can
+ * land in browser history, a proxy log or a Referer header. That is the price of
+ * a dashboard with no login on it, and it is the right trade for a private stats
+ * page whose worst case is "someone sees counts" (never card contents — see the
+ * privacy note above). Rotate ADMIN_SECRET if a URL leaks. Noted in the README.
+ */
 function secretMatches(provided, expected) {
   if (typeof provided !== 'string' || typeof expected !== 'string') return false;
   if (!expected) return false;
-  if (provided.length !== expected.length) return false;
-  let diff = 0;
-  for (let i = 0; i < expected.length; i += 1) {
-    diff |= provided.charCodeAt(i) ^ expected.charCodeAt(i);
-  }
-  return diff === 0;
+  /* A random per-process key: the digests cannot be precomputed or compared
+     against anything outside this request. */
+  const pepper = randomBytes(32);
+  const a = createHmac('sha256', pepper).update(provided).digest();
+  const b = createHmac('sha256', pepper).update(expected).digest();
+  return timingSafeEqual(a, b);
 }
 
 function Shell({ children }) {

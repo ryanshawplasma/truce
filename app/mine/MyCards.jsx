@@ -19,6 +19,7 @@ export default function MyCards() {
   const [cards, setCards] = useState(null); // null = still looking
   const [canStore, setCanStore] = useState(true);
   const [origin, setOrigin] = useState('');
+  const [justDeleted, setJustDeleted] = useState(false);
 
   useEffect(() => {
     setCanStore(storageAvailable());
@@ -28,7 +29,35 @@ export default function MyCards() {
     } catch {
       setOrigin('');
     }
+
+    /**
+     * Deleting a card sends the sender here with ?deleted=1, because the page
+     * they were on (their private page) no longer exists. Read from
+     * window.location rather than useSearchParams() so this page stays static
+     * and needs no Suspense boundary.
+     *
+     * The parameter is then wiped from the URL: a refresh should not re-announce
+     * a deletion that happened ten minutes ago.
+     */
+    try {
+      const params = new URLSearchParams(window.location.search);
+      if (params.get('deleted') === '1') {
+        setJustDeleted(true);
+        window.history.replaceState(null, '', window.location.pathname);
+      }
+    } catch {
+      /* no URL access — the banner simply does not show */
+    }
   }, []);
+
+  const deletedBanner = justDeleted ? (
+    <div className="panel deleted-note" role="status">
+      <p>
+        <b>Card deleted 🤍</b> It is gone from Truce, and its link no longer opens. Anyone you already sent it to will
+        see a friendly &ldquo;this card is no longer here&rdquo; page.
+      </p>
+    </div>
+  ) : null;
 
   if (cards === null) {
     return (
@@ -42,6 +71,8 @@ export default function MyCards() {
 
   if (cards.length === 0) {
     return (
+      <>
+      {deletedBanner}
       <div className="panel mycards__empty">
         <Sticker id="bandaged-heart" size={96} className="mycards__mascot" />
         <h2>No cards yet</h2>
@@ -60,11 +91,13 @@ export default function MyCards() {
           </Link>
         </div>
       </div>
+      </>
     );
   }
 
   return (
     <>
+      {deletedBanner}
       <div className="panel">
         <h2>My cards</h2>
         <p className="panel__sub">
@@ -89,7 +122,10 @@ export default function MyCards() {
 
 function MyCardRow({ card, origin }) {
   const [state, setState] = useState('');
-  const cardUrl = `${origin}/c/${card.id}`;
+  /* Hash-mode cards carry their whole self in the link, so the stored URL IS
+     the card — there is no /c/<id> to rebuild and no private page to visit. */
+  const isHash = card.kind === 'hash';
+  const cardUrl = isHash ? card.url : `${origin}/c/${card.id}`;
   const sealed = isSealed(card.unlockAt);
 
   /* Fire-and-forget: the handler never awaits, and copyText always settles. */
@@ -110,17 +146,33 @@ function MyCardRow({ card, origin }) {
               🕰️ Sealed
             </span>
           ) : null}
+          {isHash ? (
+            <span
+              className="mycard__badge mycard__badge--hash"
+              title="The whole card travels inside this link"
+            >
+              🔗 Self-contained
+            </span>
+          ) : null}
         </p>
         <p className="mycard__when">{relativeTime(card.createdAt) || 'just now'}</p>
+        {isHash ? (
+          <p className="mycard__note">
+            This card lives entirely in its link — nothing about it is stored on our side, so there is no private page
+            and no way to tell whether it has been opened.
+          </p>
+        ) : null}
       </div>
 
       <div className="mycard__actions">
-        <button type="button" className="btn btn--ghost btn--sm" onClick={onCopy}>
-          Their link
+        <button type="button" className={`btn btn--sm ${isHash ? 'btn--primary' : 'btn--ghost'}`} onClick={onCopy}>
+          {isHash ? 'Copy link' : 'Their link'}
         </button>
-        <Link className="btn btn--primary btn--sm" href={`/s/${card.editToken}`}>
-          My private page
-        </Link>
+        {isHash ? null : (
+          <Link className="btn btn--primary btn--sm" href={`/s/${card.editToken}`}>
+            My private page
+          </Link>
+        )}
       </div>
 
       <p className="copy-state mycard__state" role="status">

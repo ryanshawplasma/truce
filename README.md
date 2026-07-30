@@ -218,6 +218,14 @@ Without `ADMIN_SECRET` set, the page simply explains how to switch it on. With
 the wrong key, it shows a friendly "nothing to see here". Keep the link private:
 that key is the only lock on the page.
 
+**A deliberate tradeoff:** the key travels in the query string, so the full URL
+can end up in your browser history, in a proxy log, or in a `Referer` header if
+you ever click a link from that page. That is the price of a dashboard with no
+login screen, and it is a fair one here — the worst case is that someone sees
+counts, never what anybody wrote. If a URL does leak, change `ADMIN_SECRET` and
+redeploy. (The comparison itself is constant-time and leaks nothing about the
+key's length or contents.)
+
 ### Using your own domain
 
 In Vercel: **Settings → Domains → Add**, type your domain, and follow the DNS
@@ -331,6 +339,34 @@ label, so it is never the same bytes as the `/dev` key). Without it, Truce
 derives a key from your service-role key instead — which works, but rotating
 that key would silently sign everybody out of their corner.
 
+## Rate limiting: what protects the site, honestly
+
+Two things in Truce are unauthenticated and do real work: joining a corner
+(which runs `scrypt`, deliberately costing ~46ms of CPU and 16MB of memory per
+attempt) and creating a card. Both are throttled per IP address, and the check
+happens *before* any expensive work — see `lib/throttle.js`.
+
+Be clear about what that buys you. **The counters live in the memory of one
+serverless instance.** Vercel runs several, and a cold start starts from zero,
+so somebody determined enough to spread requests around gets a higher effective
+limit than the numbers suggest. This is a speed bump, not a wall: it turns
+"trivially cheap to abuse" into "annoying to abuse", with no extra services to
+pay for or run.
+
+Current limits (per IP, per minute): 5 corner joins against one room name, 20
+joins overall, 5 new corners, 10 cards, 30 reactions. Every failed join also
+takes a uniform minimum time, so "no such room" and "wrong password" cannot be
+told apart with a stopwatch, and repeat failures earn a rising delay.
+
+One more honest caveat: mobile networks put thousands of people behind a single
+public IP (carrier-grade NAT), so a per-IP limit is really a per-*network* limit.
+The numbers above are set high enough that this should never be felt by a person
+making one card, and every rejection is a friendly, temporary "one sec 🤍" that
+succeeds on retry a moment later — never a hard failure and never lost words.
+
+When Truce outgrows this, the fix is a shared counter (Upstash or Vercel KV) or
+a database-side limit — a deliberate next step, listed in the roadmap below.
+
 ## Roadmap
 
 - **Payments** — Razorpay (India) and Stripe (everywhere else) for paid tiers;
@@ -344,6 +380,8 @@ that key would silently sign everybody out of their corner.
   its moment; the next step is sending the link at that moment too, by email.
 - **Sender notifications** — an email or push the moment the card is opened.
 - **More themes and seasonal art.**
+- **Shared rate limiting** — move the in-memory throttle described above into
+  Upstash or Vercel KV so the limits hold across every serverless instance.
 
 ---
 

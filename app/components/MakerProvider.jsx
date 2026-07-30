@@ -1,6 +1,6 @@
 'use client';
 
-import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import Wizard from './Wizard';
 
 /**
@@ -25,8 +25,57 @@ export function useMaker() {
 export default function MakerProvider({ children, dbEnabled = false }) {
   const [isOpen, setIsOpen] = useState(false);
 
-  const open = useCallback(() => setIsOpen(true), []);
-  const close = useCallback(() => setIsOpen(false), []);
+  /* Once the maker has been opened it stays MOUNTED, just hidden. Unmounting it
+     would throw away every answer, which is what made pressing Back so painful:
+     nine questions gone, no warning, no way back. Mounted-but-hidden means
+     closing and reopening lands them exactly where they left off. */
+  const [hasOpened, setHasOpened] = useState(false);
+
+  /* Whether we pushed a history entry for the current opening. */
+  const pushedRef = useRef(false);
+
+  const open = useCallback(() => {
+    setHasOpened(true);
+    setIsOpen(true);
+    /**
+     * One history entry per opening, so the phone's Back gesture — which people
+     * reach for meaning "go back a step" — closes the overlay instead of
+     * leaving the site entirely. The wizard's own back arrow is untouched and
+     * still walks through the questions.
+     */
+    if (!pushedRef.current) {
+      try {
+        window.history.pushState({ truceMaker: true }, '');
+        pushedRef.current = true;
+      } catch {
+        /* Some embedded browsers refuse pushState — the maker still works. */
+      }
+    }
+  }, []);
+
+  const close = useCallback(() => {
+    /* If we pushed an entry, unwind it and let popstate do the actual closing,
+       so the history stack never drifts out of step with what is on screen. */
+    if (pushedRef.current) {
+      try {
+        window.history.back();
+        return;
+      } catch {
+        pushedRef.current = false;
+      }
+    }
+    setIsOpen(false);
+  }, []);
+
+  /* Back button / Back gesture closes the overlay rather than the site. */
+  useEffect(() => {
+    const onPop = () => {
+      pushedRef.current = false;
+      setIsOpen(false);
+    };
+    window.addEventListener('popstate', onPop);
+    return () => window.removeEventListener('popstate', onPop);
+  }, []);
 
   /* Keep the page behind the overlay from scrolling. */
   useEffect(() => {
@@ -41,7 +90,7 @@ export default function MakerProvider({ children, dbEnabled = false }) {
       <div id="app-landing" className={isOpen ? 'hidden' : undefined}>
         {children}
       </div>
-      {isOpen ? <Wizard onClose={close} dbEnabled={dbEnabled} /> : null}
+      {hasOpened ? <Wizard onClose={close} dbEnabled={dbEnabled} open={isOpen} /> : null}
     </MakerContext.Provider>
   );
 }

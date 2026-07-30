@@ -2,7 +2,11 @@ import { fraunces, nunito } from './fonts';
 import IconSprite from './components/IconSprite';
 import './globals.css';
 
-const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000';
+/* metadataBase is what relative OG/Twitter URLs are resolved against. Falling
+   back to localhost meant a deploy that forgot NEXT_PUBLIC_SITE_URL published
+   share previews pointing at the visitor's own machine. The deployed origin is
+   a far better default. Replace this when a custom domain lands. */
+const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://trucea.vercel.app';
 
 export const metadata = {
   metadataBase: new URL(siteUrl),

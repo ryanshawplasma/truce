@@ -7,6 +7,8 @@ import { revalidatePath } from 'next/cache';
 import { getSupabase, isSupabaseConfigured } from '@/lib/supabase';
 import { encodeCard } from '@/lib/codec';
 import { siteOrigin } from '@/lib/site';
+import { backoffMs, clientKey, sleep, take } from '@/lib/throttle';
+import { tidyAndTruncate } from '@/lib/truncate';
 import {
   LIMITS, THEME_IDS, STYLE_IDS, STICKER_IDS, MAX_STICKERS, isValidReaction, normaliseUnlockAt, isSealed,
 } from '@/lib/constants';
@@ -30,9 +32,52 @@ const makeToken = customAlphabet(ALPHABET, 24);
 
 /* ------------------------------------------------------------------ helpers */
 
+/**
+ * Trim + cap a field. Code-point safe: cutting a string mid-emoji leaves a lone
+ * surrogate, which PostgREST rejects as invalid UTF-8 and which would take the
+ * whole insert down with it. See lib/truncate.js.
+ */
 function str(value, max) {
   if (typeof value !== 'string') return '';
-  return value.replace(/\r\n/g, '\n').trim().slice(0, max);
+  return tidyAndTruncate(value, max);
+}
+
+/* --------------------------------------------------------------- throttles */
+
+/**
+ * Best-effort per-IP limits (in memory, per serverless instance — the honest
+ * caveats are documented in lib/throttle.js). Card writing is cheap, so these
+ * are generous: they exist to stop a script filling the table, not to police
+ * anybody using the product normally.
+ */
+const RATE = {
+  create: { limit: 10, windowMs: 60 * 1000 },   // new cards / minute
+  react: { limit: 30, windowMs: 60 * 1000 },    // reactions / minute
+  touch: { limit: 120, windowMs: 60 * 1000 },   // markOpened + setForgiven, loose
+};
+
+const BUSY = 'One sec 🤍 — that was a lot at once. Try again in a moment.';
+
+/* --------------------------------------------------------------- seal check */
+
+/**
+ * Is this card still sealed?
+ *
+ * A time-capsule card has not really been opened, forgiven or reacted to until
+ * its date arrives — the locked page never offers those buttons, but the server
+ * is the only thing that can actually enforce it.
+ *
+ * Returns { sealed, failed }. A read failure is NOT treated as "not sealed":
+ * callers do nothing rather than guess.
+ */
+async function sealState(supabase, id) {
+  const { data, error } = await supabase.from('cards').select('unlock_at').eq('id', id).maybeSingle();
+  if (error) {
+    console.error('[truce] seal check failed:', error.message);
+    return { sealed: false, failed: true };
+  }
+  if (!data) return { sealed: false, failed: true, missing: true };
+  return { sealed: isSealed(data.unlock_at), failed: false };
 }
 
 function oneOf(value, allowed, fallback) {
@@ -119,6 +164,13 @@ export async function getCapabilities() {
 export async function createCard(input) {
   const { card, error } = validateCardInput(input);
   if (error) return { ok: false, error };
+
+  /* Generous, and only about stopping a script — see RATE above. */
+  const gate = take('card:create', await clientKey(), RATE.create.limit, RATE.create.windowMs);
+  if (!gate.ok) {
+    await sleep(backoffMs(gate.strikes));
+    return { ok: false, error: BUSY };
+  }
 
   const origin = await siteOrigin();
 
@@ -211,11 +263,19 @@ export async function markOpened(id) {
   const supabase = getSupabase();
   if (!supabase) return { ok: true };
 
+  if (!take('card:touch', await clientKey(), RATE.touch.limit, RATE.touch.windowMs).ok) {
+    return { ok: true, throttled: true }; // silent: this is telemetry, not an action
+  }
+
   /* A sealed time-capsule has not been opened, however many times the link is
      tapped — the sender should not see "opened" before their own date. The
-     locked page never calls this, but the check belongs on the server. */
-  const { data: row } = await supabase.from('cards').select('unlock_at').eq('id', id).maybeSingle();
-  if (row && isSealed(row.unlock_at)) return { ok: true, sealed: true };
+     locked page never calls this, but the check belongs on the server.
+
+     If the read itself fails we do NOTHING. Recording "opened" on the strength
+     of a failed lookup would be worse than missing the event entirely. */
+  const seal = await sealState(supabase, id);
+  if (seal.failed) return { ok: false, unknown: true };
+  if (seal.sealed) return { ok: true, sealed: true };
 
   const { error } = await supabase
     .from('cards')
@@ -234,6 +294,15 @@ export async function setForgiven(id) {
   if (typeof id !== 'string' || !id || id === 'demo' || id === 'local') return { ok: true };
   const supabase = getSupabase();
   if (!supabase) return { ok: true };
+
+  if (!take('card:touch', await clientKey(), RATE.touch.limit, RATE.touch.windowMs).ok) {
+    return { ok: true, throttled: true };
+  }
+
+  /* Same rule as markOpened: nothing can be forgiven before it can be read. */
+  const seal = await sealState(supabase, id);
+  if (seal.failed) return { ok: false, unknown: true };
+  if (seal.sealed) return { ok: true, sealed: true };
 
   const { error } = await supabase
     .from('cards')
@@ -258,6 +327,18 @@ export async function addReaction(id, emoji) {
   const supabase = getSupabase();
   if (!supabase) return { ok: true, mode: 'demo' };
 
+  const gate = take('card:react', await clientKey(), RATE.react.limit, RATE.react.windowMs);
+  if (!gate.ok) {
+    await sleep(backoffMs(gate.strikes));
+    return { ok: false, error: BUSY };
+  }
+
+  /* A sealed card cannot be reacted to — its words have not been handed over
+     yet, so there is nothing to react to. */
+  const seal = await sealState(supabase, id);
+  if (seal.failed) return { ok: false, error: 'Could not send that just now.' };
+  if (seal.sealed) return { ok: false, error: 'This letter has not opened yet 🕰️' };
+
   const { count, error: countError } = await supabase
     .from('reactions')
     .select('id', { count: 'exact', head: true })
@@ -267,6 +348,10 @@ export async function addReaction(id, emoji) {
     console.error('[truce] reaction count failed:', countError.message);
     return { ok: false, error: 'Could not send that just now.' };
   }
+  /* Count-then-insert is a check-then-act race: two reactions arriving together
+     can both see 49 and both insert. The overshoot is at most a handful of rows
+     and entirely harmless — enforcing it exactly would need a database-side
+     constraint or a transaction, which is not worth it for a politeness cap. */
   if ((count || 0) >= LIMITS.reactionsPerCard) {
     return { ok: false, error: 'This card has received plenty of love already 🤍' };
   }
@@ -295,5 +380,8 @@ export async function deleteCard(editToken) {
   }
 
   revalidatePath(`/s/${editToken}`);
-  redirect('/?deleted=1');
+  /* Land somewhere that actually acknowledges the deletion. The private page
+     they were on no longer exists, and the landing page has no idea what
+     ?deleted=1 means — /mine reads it and says so. */
+  redirect('/mine?deleted=1');
 }

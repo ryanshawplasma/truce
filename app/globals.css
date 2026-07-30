@@ -485,6 +485,10 @@ ul{margin:0;padding:0;list-style:none}
 }
 
 /* ---------- 6. Wizard ------------------------------------------------------ */
+/* The maker stays mounted when closed (its answers live in React state), so
+   [hidden] has to win against the display:flex below. */
+.wizard[hidden]{display:none !important}
+
 .wizard{
   position:fixed;inset:0;z-index:90;
   background:linear-gradient(170deg,var(--cream) 0%,#FFF0EA 46%,#FDE7EE 100%);
@@ -617,10 +621,10 @@ ul{margin:0;padding:0;list-style:none}
   font-size:1.15rem;box-shadow:0 4px 14px rgba(0,0,0,.14);
 }
 .mini__body{padding:22px;font-size:.95rem;line-height:1.62}
-.mini__dear{font-family:var(--font-display);font-size:1.15rem;margin-bottom:10px}
+.mini__dear{font-family:var(--font-display);font-size:1.15rem;margin-bottom:10px;overflow-wrap:anywhere}
 .mini__msg{white-space:pre-wrap;margin-bottom:14px}
 .mini__extra{border-radius:var(--r-sm);padding:12px 14px;font-size:.88rem;margin-bottom:10px}
-.mini__sign{font-family:var(--font-display);font-style:italic;text-align:right;font-size:.98rem}
+.mini__sign{font-family:var(--font-display);font-style:italic;text-align:right;font-size:.98rem;overflow-wrap:anywhere}
 .mini__re{font-size:.75rem;font-weight:800;letter-spacing:.09em;text-transform:uppercase;opacity:.7;margin-bottom:10px}
 
 .spinner{
@@ -790,8 +794,17 @@ ul{margin:0;padding:0;list-style:none}
 .cardapp__scene[hidden]{display:none}
 
 /* Scene 1 — envelope */
-.env-scene h2{font-size:clamp(1.7rem,5.4vw,2.5rem);margin-bottom:6px}
-.env-scene__sub{color:var(--t-ink-soft);margin-bottom:clamp(26px,5vw,38px);font-size:1.03rem;max-width:420px}
+/* Names are free text: 40 unbroken characters, or a wall of emoji, must wrap
+   instead of running off the side of the phone. `anywhere` (not `break-word`)
+   is the one that also shrinks the box's intrinsic width inside flex/grid. */
+.env-scene h2{
+  font-size:clamp(1.7rem,5.4vw,2.5rem);margin-bottom:6px;
+  overflow-wrap:anywhere;hyphens:auto;max-width:100%;
+}
+.env-scene__sub{
+  color:var(--t-ink-soft);margin-bottom:clamp(26px,5vw,38px);font-size:1.03rem;max-width:420px;
+  overflow-wrap:anywhere;
+}
 .env-wrap{
   width:min(360px,86vw);margin-bottom:26px;
   background:none;border:0;padding:0;display:block;position:relative;
@@ -834,6 +847,7 @@ ul{margin:0;padding:0;list-style:none}
 }
 .env__letter span{
   font-family:var(--font-display);font-size:.9rem;color:var(--t-paper-ink-soft);opacity:.7;
+  overflow-wrap:anywhere;max-width:100%;
 }
 .env__flap{
   position:absolute;top:0;left:0;right:0;height:58%;
@@ -936,7 +950,10 @@ ul{margin:0;padding:0;list-style:none}
   color:var(--t-accent);background:var(--t-accent-soft);
   padding:5px 12px;border-radius:var(--r-pill);margin-bottom:16px;
 }
-.letter__dear{font-family:var(--font-display);font-size:clamp(1.4rem,4.4vw,1.85rem);margin:0 0 14px;font-weight:600}
+.letter__dear{
+  font-family:var(--font-display);font-size:clamp(1.4rem,4.4vw,1.85rem);margin:0 0 14px;font-weight:600;
+  overflow-wrap:anywhere;hyphens:auto;
+}
 .letter__msg{
   font-size:clamp(1.02rem,2.5vw,1.13rem);line-height:1.75;white-space:pre-wrap;
   margin:0;min-height:3em;color:var(--t-paper-ink);
@@ -969,6 +986,7 @@ ul{margin:0;padding:0;list-style:none}
 .letter__sign{
   margin-top:26px;text-align:right;font-family:var(--font-display);font-style:italic;
   font-size:1.12rem;color:var(--t-accent);animation:riseIn .55s var(--ease) both .2s;
+  overflow-wrap:anywhere;
 }
 
 /* Forgive block */
@@ -1902,6 +1920,18 @@ ul{margin:0;padding:0;list-style:none}
   overflow-wrap:anywhere;
 }
 .mycard__when{margin:3px 0 0;font-size:.82rem;font-weight:700;color:var(--plum-soft)}
+/* Hash-mode ("self-contained link") rows on /mine, plus the delete confirmation. */
+.mycard__note{
+  margin:7px 0 0;font-size:.82rem;line-height:1.45;color:var(--plum-soft);font-weight:600;
+  overflow-wrap:anywhere;
+}
+.mycard__badge--hash{background:rgba(139,107,214,.14);color:#6B4FB0}
+.deleted-note{
+  border-color:rgba(232,93,117,.3);
+  background:linear-gradient(180deg,#FFF4F6,#fff);
+}
+.deleted-note p{margin:0;font-size:.95rem;color:var(--plum-mid);line-height:1.55}
+.deleted-note b{color:var(--plum)}
 .mycard__actions{display:flex;flex-wrap:wrap;gap:9px}
 .mycard__actions .btn{flex:1 1 0;min-width:0;padding-inline:14px;white-space:nowrap}
 .mycard__state{margin:0;text-align:left}

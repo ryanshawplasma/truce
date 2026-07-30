@@ -3,6 +3,8 @@
 import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
 import { isSupabaseConfigured } from '@/lib/supabase';
+import { backoffMs, clientKey, sleep, strike, take } from '@/lib/throttle';
+import { tidyAndTruncate } from '@/lib/truncate';
 import {
   COUPLE_COOKIE,
   MAX_MESSAGE_LENGTH,
@@ -30,6 +32,43 @@ import {
  */
 
 const NO_DB = 'Our corner is not switched on for this site yet — it needs somewhere to keep your messages.';
+
+/* ------------------------------------------------------------------ limits */
+
+/**
+ * Why these actions are throttled at all.
+ *
+ * createRoom and joinRoom are the only unauthenticated things in Truce that do
+ * real work: verifying a password runs scrypt, which deliberately costs about
+ * 46ms of CPU and 16MB of memory *per attempt*. Without a limit, one laptop can
+ * both guess passwords quickly and hold a serverless instance down by asking it
+ * to hash. So:
+ *
+ *  - every attempt is counted per IP, and again per IP+room name
+ *  - the count is checked BEFORE any hashing happens, so a rejected attempt is
+ *    nearly free for us and not for them
+ *  - every failed join takes at least MIN_FAIL_MS, so "no such room" and "wrong
+ *    password" cannot be told apart by a stopwatch
+ *  - repeat failures earn a rising delay (see backoffMs)
+ *
+ * The counters are per serverless instance and are forgotten on a cold start —
+ * see the long note in lib/throttle.js. This is a speed bump, honestly labelled.
+ */
+const JOIN_PER_ROOM = 5;      // attempts / minute against one room name
+const JOIN_PER_IP = 20;       // attempts / minute from one address, any room
+const CREATE_PER_IP = 5;      // new rooms / minute from one address
+const WINDOW_MS = 60 * 1000;
+
+/* Every failed join costs at least this long, whatever went wrong. */
+const MIN_FAIL_MS = 250;
+
+const TOO_MANY = 'Too many tries just now — give it a minute 🤍';
+
+/** Hold the answer until it has taken a uniform amount of time, plus backoff. */
+async function uniformFail(startedAt, strikes) {
+  const spent = Date.now() - startedAt;
+  await sleep(Math.max(0, MIN_FAIL_MS - spent) + backoffMs(strikes));
+}
 
 /* ------------------------------------------------------------------ session */
 
@@ -83,6 +122,14 @@ export async function leaveRoom() {
 export async function createRoom(input) {
   if (!isSupabaseConfigured()) return { ok: false, error: NO_DB };
 
+  /* Checked before anything expensive: creating a room hashes a password. */
+  const ip = await clientKey();
+  const gate = take('couple:create', ip, CREATE_PER_IP, WINDOW_MS);
+  if (!gate.ok) {
+    await sleep(backoffMs(gate.strikes));
+    return { ok: false, error: TOO_MANY, field: 'name' };
+  }
+
   const nameCheck = normaliseRoomName(input && input.name);
   if (nameCheck.error) return { ok: false, error: nameCheck.error, field: 'name' };
 
@@ -116,20 +163,44 @@ export async function createRoom(input) {
 export async function joinRoom(input) {
   if (!isSupabaseConfigured()) return { ok: false, error: NO_DB };
 
-  const nameCheck = normaliseRoomName(input && input.name);
-  /* Deliberately vague: a malformed name and a wrong name get the same answer,
-     so this cannot be used to discover which rooms exist. */
+  const startedAt = Date.now();
+
+  /* Deliberately vague: a malformed name, an unknown name and a wrong password
+     all get the same answer in the same amount of time, so this cannot be used
+     to discover which rooms exist. */
   const wrong = { ok: false, error: 'That name and password did not match a corner.' };
-  if (nameCheck.error) return wrong;
+
+  const nameCheck = normaliseRoomName(input && input.name);
+  const ip = await clientKey();
+  /* A malformed name still gets a bucket, so junk cannot be used to dodge the
+     per-room limit — it just shares one. */
+  const roomKey = `${ip}|${nameCheck.name || '?'}`;
+
+  /* Both gates are consulted BEFORE the password is hashed. */
+  const perIp = take('couple:join:ip', ip, JOIN_PER_IP, WINDOW_MS);
+  const perRoom = take('couple:join:room', roomKey, JOIN_PER_ROOM, WINDOW_MS);
+  if (!perIp.ok || !perRoom.ok) {
+    await sleep(backoffMs(Math.max(perIp.strikes, perRoom.strikes)));
+    return { ok: false, error: TOO_MANY };
+  }
+
+  /* One helper for every failure path, so they are indistinguishable. */
+  const fail = async () => {
+    const strikes = strike('couple:join:room', roomKey);
+    await uniformFail(startedAt, strikes);
+    return wrong;
+  };
+
+  if (nameCheck.error) return fail();
 
   const password = String((input && input.password) || '');
-  if (!password) return wrong;
+  if (!password) return fail();
 
   const room = await findRoomByName(nameCheck.name);
-  if (!room) return wrong;
+  if (!room) return fail();
 
   const good = await verifyPassword(password, room.pass_hash, room.pass_salt);
-  if (!good) return wrong;
+  if (!good) return fail();
 
   await enterRoom(room.id, normaliseSide(input && input.side)); // throws to redirect
 }
@@ -146,17 +217,34 @@ export async function joinRoom(input) {
 const lastSentAt = new Map();
 const THROTTLE_MS = 1000;
 
+/* The map is keyed by room+side, so it grows with the number of rooms that have
+   ever sent a message on this instance. Sweep anything older than a minute — by
+   then the 1s throttle it existed to enforce is long spent. */
+const SEND_SWEEP_MS = 60 * 1000;
+let lastSendSweep = 0;
+
+function pruneLastSent(now) {
+  if (now - lastSendSweep < SEND_SWEEP_MS) return;
+  lastSendSweep = now;
+  for (const [key, at] of lastSentAt) {
+    if (now - at > SEND_SWEEP_MS) lastSentAt.delete(key);
+  }
+}
+
 export async function sendMessage(body) {
   if (!isSupabaseConfigured()) return { ok: false, error: NO_DB };
 
   const session = await currentSession();
   if (!session) return { ok: false, error: 'You are signed out — open your corner again.', signedOut: true };
 
-  const text = String(body == null ? '' : body).replace(/\r\n/g, '\n').trim().slice(0, MAX_MESSAGE_LENGTH);
+  /* Code-point safe: a message ending in an emoji must not be cut in half.
+     See lib/truncate.js for why a plain .slice() breaks the insert. */
+  const text = tidyAndTruncate(String(body == null ? '' : body), MAX_MESSAGE_LENGTH);
   if (!text) return { ok: false, error: 'Type something first.' };
 
   const key = `${session.roomId}:${session.side}`;
   const now = Date.now();
+  pruneLastSent(now);
   const previous = lastSentAt.get(key) || 0;
   if (now - previous < THROTTLE_MS) {
     return { ok: false, error: 'One at a time 🤍' };

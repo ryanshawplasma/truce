@@ -94,6 +94,9 @@ export default async function CardPage({ params }) {
           theme: card.theme,
           unlock_at: card.unlock_at,
         }}
+        /* The server's clock, sent along so the countdown can correct for a
+           visitor whose device clock is wrong — see LockedCard. */
+        serverNow={Date.now()}
       />
     );
   }

@@ -11,6 +11,7 @@ import { PACKS, Sticker } from './stickers';
 import PackTabs from './PackTabs';
 import { getOccasion, envelopeSubtitle } from '@/lib/occasions';
 import { rememberCard } from '@/lib/mycards';
+import { truncate } from '@/lib/truncate';
 import { CUTENESS_MAX, cutenessScore, cutenessLabel, cutenessHint } from '@/lib/cuteness';
 import { celebrate } from './ui';
 import CopyRow from './CopyRow';
@@ -63,6 +64,22 @@ function toLocalInputValue(ms) {
   );
 }
 
+/**
+ * A datetime-local value -> an ISO string, or null.
+ *
+ * Browsers that do not support type="datetime-local" fall back to a plain text
+ * box, so this can receive literally anything the visitor typed. `new
+ * Date("banana").toISOString()` throws a RangeError, and thrown from inside a
+ * useMemo that runs on every keystroke it takes the whole maker down with it.
+ * Anything unparseable is treated as "no seal".
+ */
+function localToIso(value) {
+  if (!value) return null;
+  const when = new Date(value).getTime();
+  if (!Number.isFinite(when)) return null;
+  return new Date(when).toISOString();
+}
+
 /* ---------------------------------------------------------------- helpers */
 
 const tidy = (value) => String(value ?? '').replace(/[ \t]+/g, ' ').trim();
@@ -82,11 +99,17 @@ function filterMessages(style, recipientId) {
   });
 }
 
-/** The combined "what happened" line shown as `Re: …` on the card. */
+/** The combined "what happened" line shown as `Re: …` on the card.
+ *
+ *  truncate() rather than .slice(): five preset reasons plus a free-text note
+ *  easily runs past the limit, and cutting there can land in the middle of an
+ *  emoji. That leaves a lone surrogate, which makes the JSON invalid UTF-8 and
+ *  the insert fail — the card would silently degrade to a hash link because
+ *  somebody typed "😭" at the end. See lib/truncate.js. */
 function buildReason(data) {
   const parts = [...data.reasons];
   if (data.reasonText) parts.push(data.reasonText);
-  return parts.join(' · ').slice(0, LIMITS.reason);
+  return truncate(parts.join(' · '), LIMITS.reason);
 }
 
 /** Wizard answers -> the card shape used everywhere else. */
@@ -104,7 +127,7 @@ function toCard(data) {
     theme: data.theme,
     stickers: data.stickers,
     /* null unless they sealed it; the server re-validates either way. */
-    unlock_at: data.sealed && data.unlockLocal ? new Date(data.unlockLocal).toISOString() : null,
+    unlock_at: data.sealed ? localToIso(data.unlockLocal) : null,
   };
 }
 
@@ -203,7 +226,7 @@ function LinkRow({ label, url, help, tone = 'public' }) {
    Wizard
    ========================================================================== */
 
-export default function Wizard({ onClose, dbEnabled = false }) {
+export default function Wizard({ onClose, dbEnabled = false, open = true }) {
   const occasion = getOccasion(OCCASION_ID);
   const copy = occasion.wizard;
 
@@ -256,17 +279,20 @@ export default function Wizard({ onClose, dbEnabled = false }) {
     };
   }, []);
 
-  /* Esc closes the maker. */
+  /* Esc closes the maker — but only while it is on screen. The component stays
+     mounted when closed (see MakerProvider) so its answers survive. */
   useEffect(() => {
+    if (!open) return undefined;
     const onKey = (e) => {
       if (e.key === 'Escape') onClose();
     };
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
-  }, [onClose]);
+  }, [onClose, open]);
 
   /* Move focus to the new question so keyboard and screen readers keep up. */
   useEffect(() => {
+    if (!open) return;
     const el = stepRef.current;
     if (!el) return;
     try {
@@ -274,7 +300,48 @@ export default function Wizard({ onClose, dbEnabled = false }) {
     } catch {
       el.focus();
     }
-  }, [step]);
+  }, [step, open]);
+
+  /* Has anything actually been typed or chosen? Used only to decide whether a
+     refresh is worth interrupting. */
+  const hasAnswers = useMemo(
+    () =>
+      Boolean(
+        data.recipient ||
+          data.to_name ||
+          data.from_name ||
+          data.message ||
+          data.promise ||
+          data.memory ||
+          data.style ||
+          data.reasonText ||
+          (data.reasons && data.reasons.length) ||
+          (data.stickers && data.stickers.length),
+      ),
+    [data],
+  );
+
+  /**
+   * "Leave site?" while there are unsaved answers.
+   *
+   * Nothing is stored anywhere until "Create your card" is pressed, so a stray
+   * refresh or a closed tab really does lose the lot. The browser's own confirm
+   * dialog is the only thing that can interrupt that.
+   *
+   * Deliberately NOT shown once `result` exists: by then the card is made, the
+   * link is on screen, and — in hash mode — also remembered in My cards, so
+   * there is nothing left to lose and the prompt would just be rude.
+   */
+  useEffect(() => {
+    if (!open || result || !hasAnswers) return undefined;
+    const onBeforeUnload = (e) => {
+      e.preventDefault();
+      e.returnValue = ''; // required by some browsers to actually show the prompt
+      return '';
+    };
+    window.addEventListener('beforeunload', onBeforeUnload);
+    return () => window.removeEventListener('beforeunload', onBeforeUnload);
+  }, [open, result, hasAnswers]);
 
   const messages = useMemo(() => filterMessages(data.style, data.recipient), [data.style, data.recipient]);
   const card = useMemo(() => toCard(data), [data]);
@@ -318,8 +385,8 @@ export default function Wizard({ onClose, dbEnabled = false }) {
 
   /* ----------------------------------------------------------- validation */
   function validateNames() {
-    const to_name = tidy(data.to_name).slice(0, LIMITS.name);
-    const from_name = tidy(data.from_name).slice(0, LIMITS.name);
+    const to_name = truncate(tidy(data.to_name), LIMITS.name);
+    const from_name = truncate(tidy(data.from_name), LIMITS.name);
     set({ to_name, from_name });
     const nextErrors = {};
     if (!to_name) nextErrors.to = 'Who is this for?';
@@ -329,11 +396,13 @@ export default function Wizard({ onClose, dbEnabled = false }) {
   }
 
   function validateMessage() {
-    const message = String(data.message || '')
-      .replace(/[ \t]+/g, ' ')
-      .replace(/\n{3,}/g, '\n\n')
-      .trim()
-      .slice(0, LIMITS.message);
+    const message = truncate(
+      String(data.message || '')
+        .replace(/[ \t]+/g, ' ')
+        .replace(/\n{3,}/g, '\n\n')
+        .trim(),
+      LIMITS.message,
+    );
     set({ message });
     if (!message) {
       setErrors({ message: 'Pick a message above or write your own.' });
@@ -386,11 +455,23 @@ export default function Wizard({ onClose, dbEnabled = false }) {
          link. Failure here is silent by design — see lib/mycards.js. */
       if (response.mode === 'db' && response.id && response.editToken) {
         rememberCard({
+          kind: 'db',
           id: response.id,
           editToken: response.editToken,
           toName: card.to_name,
           createdAt: new Date().toISOString(),
           unlockAt: response.unlockAt || null,
+        });
+      } else if (response.mode === 'hash' && response.payload) {
+        /* Hash-mode cards live entirely in their link, so the link IS the card.
+           Remember the finished URL: refreshing this screen used to lose it for
+           good, with nothing on any server to recover it from. */
+        const origin = response.origin || (typeof window !== 'undefined' ? window.location.origin : '');
+        rememberCard({
+          kind: 'hash',
+          url: `${origin}/c/local#c=${response.payload}`,
+          toName: card.to_name,
+          createdAt: new Date().toISOString(),
         });
       }
 
@@ -412,7 +493,12 @@ export default function Wizard({ onClose, dbEnabled = false }) {
       setErrors({ unlock: 'Pick the moment it should open.' });
       return false;
     }
-    const check = normaliseUnlockAt(new Date(data.unlockLocal).toISOString());
+    const iso = localToIso(data.unlockLocal);
+    if (!iso) {
+      setErrors({ unlock: 'That date did not look right — pick it again.' });
+      return false;
+    }
+    const check = normaliseUnlockAt(iso);
     if (check.error) {
       setErrors({ unlock: check.error });
       return false;
@@ -1072,7 +1158,15 @@ export default function Wizard({ onClose, dbEnabled = false }) {
   }
 
   return (
-    <div className="wizard" role="dialog" aria-modal="true" aria-label="Create your apology card">
+    <div
+      className="wizard"
+      role="dialog"
+      aria-modal="true"
+      aria-label="Create your apology card"
+      /* Hidden rather than unmounted, so answers survive a close/reopen. */
+      hidden={!open}
+      inert={!open}
+    >
       <div className="wizard__bar">
         <div className="wrap wizard__barin">
           <button type="button" className="icon-btn" onClick={back} disabled={done} aria-label="Previous step">

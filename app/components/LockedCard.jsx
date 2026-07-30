@@ -12,7 +12,17 @@ import { absoluteTime, friendlyDateTime } from '@/lib/format';
  * seal breaks (see app/c/[id]/page.js). When the countdown reaches zero it
  * reloads, and the server hands over the real card.
  */
-export default function LockedCard({ card }) {
+/**
+ * Reload guard, deliberately a module-level variable.
+ *
+ * It must survive this component unmounting and remounting, but NOT survive a
+ * real page load — which is exactly what a module variable does. Storage is not
+ * an option (Truce keeps nothing in sessionStorage), and a ref would be reset
+ * by the very remount we are guarding against.
+ */
+let reloadRequested = false;
+
+export default function LockedCard({ card, serverNow }) {
   const unlockAt = card.unlock_at;
 
   /* Dates and countdowns are local-clock things, so nothing time-shaped is
@@ -26,19 +36,48 @@ export default function LockedCard({ card }) {
 
   useEffect(() => {
     setMounted(true);
+
+    /**
+     * Whose clock decides when this opens?
+     *
+     * The server's — because the server is what actually refuses to send the
+     * words. A device running ten minutes fast used to hit zero early, reload,
+     * get the sealed page again (the server still says "not yet"), and reload
+     * again, forever.
+     *
+     * So we measure the offset between the two clocks ONCE at mount and count
+     * down against server time from then on. Every later tick uses the
+     * browser's own elapsed time, which is reliable even when its wall clock is
+     * not.
+     */
+    const mountedAt = Date.now();
+    const offset = typeof serverNow === 'number' && Number.isFinite(serverNow) ? serverNow - mountedAt : 0;
+    const serverTime = () => Date.now() + offset;
+
+    let reloadTimer = 0;
+
     const tick = () => {
-      const next = remaining(unlockAt);
+      const next = remaining(unlockAt, serverTime());
       setLeft(next);
-      if (next.total <= 0) {
-        /* The moment has arrived. Ask the server again — it is the only one
-           that can hand over the words. */
-        window.setTimeout(() => window.location.reload(), 400);
-      }
+      if (next.total > 0 || reloadRequested) return;
+
+      /* The moment has arrived. Ask the server again — it is the only one that
+         can hand over the words. Exactly once: if it comes back still sealed
+         (clock skew, a slow write) we show the countdown at zero rather than
+         reloading in a loop. The 2s wait also lets a just-passed deadline
+         settle on the server side. */
+      reloadRequested = true;
+      window.clearInterval(timer);
+      reloadTimer = window.setTimeout(() => window.location.reload(), 2000);
     };
+
     tick();
     const timer = window.setInterval(tick, 1000);
-    return () => window.clearInterval(timer);
-  }, [unlockAt]);
+    return () => {
+      window.clearInterval(timer);
+      if (reloadTimer) window.clearTimeout(reloadTimer);
+    };
+  }, [unlockAt, serverNow]);
 
   useEffect(() => {
     document.body.classList.add('is-locked');
@@ -131,10 +170,11 @@ function Countdown({ left, ready }) {
   );
 }
 
-/** Milliseconds left, split into whole days / hours / minutes / seconds. */
-function remaining(unlockAt) {
+/** Milliseconds left, split into whole days / hours / minutes / seconds.
+ *  `now` is server time (see the offset calculation above), not the device's. */
+function remaining(unlockAt, now = Date.now()) {
   const target = new Date(unlockAt).getTime();
-  const total = Number.isNaN(target) ? 0 : Math.max(0, target - Date.now());
+  const total = Number.isNaN(target) ? 0 : Math.max(0, target - now);
   return {
     total,
     days: Math.floor(total / 86400000),

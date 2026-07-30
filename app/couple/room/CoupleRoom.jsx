@@ -260,12 +260,43 @@ function Bubble({ message, mine }) {
 
 /* -------------------------------------------------------------- little bits */
 
-/** Merge new messages in, keeping ids unique and the order stable. */
+/**
+ * Merge new messages in, keeping ids unique and the order stable.
+ *
+ * Two things to get right:
+ *
+ *  1. Ids are unique. A poll and a send can deliver the same row, and the same
+ *     poll can overlap the next one.
+ *  2. The optimistic copy has to go. A message is shown immediately with a
+ *     temporary negative id, then replaced when the server answers. If a poll
+ *     lands in between it brings the REAL row back — different id, same words —
+ *     and the sender briefly sees their message twice. Matching a pending row
+ *     against an arriving one by author+body drops the placeholder instead.
+ */
 function merge(current, incoming) {
+  if (!incoming || !incoming.length) return current;
+
   const seen = new Set(current.map((m) => m.id));
-  const added = incoming.filter((m) => !seen.has(m.id));
+  const added = [];
+  for (const message of incoming) {
+    if (!message || seen.has(message.id)) continue;
+    seen.add(message.id);
+    added.push(message);
+  }
   if (!added.length) return current;
-  return [...current, ...added].sort(sortByTime);
+
+  /* Each arriving row can retire at most one placeholder, so sending the same
+     words twice on purpose still shows two bubbles. */
+  const claimed = new Set();
+  const kept = current.filter((m) => {
+    if (!m.pending) return true;
+    const match = added.find((x) => !claimed.has(x.id) && x.author === m.author && x.body === m.body);
+    if (!match) return true;
+    claimed.add(match.id);
+    return false;
+  });
+
+  return [...kept, ...added].sort(sortByTime);
 }
 
 function sortByTime(a, b) {
