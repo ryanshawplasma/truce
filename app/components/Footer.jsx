@@ -40,6 +40,9 @@ export default function Footer() {
               <li>
                 <a href="/c/demo">See a sample card</a>
               </li>
+              <li>
+                <a href="/mine">My cards</a>
+              </li>
             </ul>
           </div>
 

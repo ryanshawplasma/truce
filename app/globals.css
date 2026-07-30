@@ -1780,3 +1780,68 @@ ul{margin:0;padding:0;list-style:none}
   .meter.is-full .meter__heart{animation:none !important}
   .env-scene__hit:hover + .env-scene__stack .env-wrap{transform:none}
 }
+
+/* ==========================================================================
+   Device memory — /mine, the creator banner, and the success-screen hint
+   ========================================================================== */
+
+/* "Saved on this device" line under the private link on the success screen. */
+.done__saved{
+  margin:10px 0 0;font-size:.86rem;font-weight:700;color:var(--plum-soft);text-align:left;
+}
+.done__saved a{color:var(--rose-deep);border-bottom:1.5px solid rgba(232,93,117,.4);padding-bottom:1px}
+.done__saved a:hover{border-bottom-color:var(--rose-deep)}
+
+/* ---- /mine ------------------------------------------------------------- */
+.mycards{list-style:none;margin:0;padding:0;display:grid;gap:12px}
+.mycard{
+  display:grid;gap:12px;
+  background:#fff;border:1px solid var(--line);border-radius:var(--r);
+  padding:16px 17px;box-shadow:var(--sh-xs);
+  transition:border-color .2s var(--ease),box-shadow .2s var(--ease);
+}
+.mycard:hover{border-color:rgba(232,93,117,.3);box-shadow:var(--sh-sm)}
+.mycard__main{min-width:0}
+.mycard__to{
+  margin:0;font-family:var(--font-display);font-weight:600;font-size:1.14rem;
+  line-height:1.25;color:var(--plum);
+  overflow-wrap:anywhere;
+}
+.mycard__when{margin:3px 0 0;font-size:.82rem;font-weight:700;color:var(--plum-soft)}
+.mycard__actions{display:flex;flex-wrap:wrap;gap:9px}
+.mycard__actions .btn{flex:1 1 0;min-width:0;padding-inline:14px;white-space:nowrap}
+.mycard__state{margin:0;text-align:left}
+.mycard__state:empty{display:none}
+
+@media (min-width:620px){
+  .mycard{grid-template-columns:1fr auto;align-items:center;gap:16px}
+  .mycard__actions{flex:0 0 auto}
+  .mycard__actions .btn{flex:0 0 auto;min-width:0}
+  .mycard__state{grid-column:1 / -1}
+}
+
+.mycards__empty{text-align:center}
+.mycards__mascot{display:block;margin:0 auto 6px;animation:floaty 7s var(--ease) infinite}
+.mycards__fineprint{
+  font-size:.85rem;color:var(--plum-soft);font-weight:600;line-height:1.6;
+  max-width:460px;margin:0 auto 22px;
+}
+.mycards__fineprint--foot{
+  max-width:620px;margin:18px auto 0;text-align:center;
+}
+
+/* ---- "this is your card" banner on /c/[id] ------------------------------ */
+.creator-banner{
+  flex:0 0 auto;
+  display:flex;align-items:center;justify-content:center;gap:8px;
+  padding:9px 16px;
+  font-size:.8rem;font-weight:800;line-height:1.35;text-align:center;
+  color:var(--t-ink);background:var(--t-accent-soft);
+  border-bottom:1px solid var(--t-paper-edge);
+  opacity:.85;transition:opacity .2s var(--ease);
+}
+.creator-banner:hover{opacity:1}
+
+@media (prefers-reduced-motion:reduce){
+  .mycards__mascot{animation:none !important}
+}

@@ -7,6 +7,7 @@ import { REACTION_EMOJI, MAX_STICKERS, STICKER_REACTION_PREFIX, softenReason } f
 import { PACKS, Sticker } from './stickers';
 import PackTabs from './PackTabs';
 import { getOccasion, envelopeSubtitle } from '@/lib/occasions';
+import { findMyCard } from '@/lib/mycards';
 import {
   burstFrom,
   burstGlyphs,
@@ -48,6 +49,15 @@ export default function CardExperience({ card, live = false, initialReactions = 
   const occasion = getOccasion(card.occasion);
   const stickers = Array.isArray(card.stickers) ? card.stickers.slice(0, MAX_STICKERS) : [];
   const about = softenReason(card.reason);
+
+  /* If this device made this card, quietly offer the way back to the private
+     page — for senders who kept the share link but lost the /s/ one. Read in an
+     effect so the server render and the first client render match. */
+  const [myEntry, setMyEntry] = useState(null);
+  useEffect(() => {
+    if (!live || !card.id) return;
+    setMyEntry(findMyCard(card.id));
+  }, [live, card.id]);
 
   const [opened, setOpened] = useState(false);
   /* `envDone` = the opening animation has finished. It flips the envelope out
@@ -211,6 +221,12 @@ export default function CardExperience({ card, live = false, initialReactions = 
 
   return (
     <div className="cardapp themed" data-theme={card.theme || 'blush'}>
+      {myEntry ? (
+        <Link className="creator-banner" href={`/s/${myEntry.editToken}`}>
+          <span aria-hidden="true">🔒</span> This is your card — view your private page →
+        </Link>
+      ) : null}
+
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
         {/* ---------- Scene 1: the envelope ---------- */}
         {!showLetter ? (

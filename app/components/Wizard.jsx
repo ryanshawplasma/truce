@@ -10,6 +10,7 @@ import {
 import { PACKS, Sticker } from './stickers';
 import PackTabs from './PackTabs';
 import { getOccasion, envelopeSubtitle } from '@/lib/occasions';
+import { rememberCard } from '@/lib/mycards';
 import { celebrate, copyText } from './ui';
 
 /**
@@ -361,6 +362,19 @@ export default function Wizard({ onClose }) {
         return;
       }
       setResult(response);
+
+      /* Remember it on this device so /mine can hand the private link back if
+         they lose it. Only real cards have one; hash-mode cards are their own
+         link. Failure here is silent by design — see lib/mycards.js. */
+      if (response.mode === 'db' && response.id && response.editToken) {
+        rememberCard({
+          id: response.id,
+          editToken: response.editToken,
+          toName: card.to_name,
+          createdAt: new Date().toISOString(),
+        });
+      }
+
       goTo(TOTAL_STEPS, 1);
       setTimeout(() => celebrate(), 260);
     } catch {
@@ -858,12 +872,18 @@ export default function Wizard({ onClose }) {
                   help="Text it, email it, AirDrop it. It opens in any browser, no app needed."
                 />
                 {links.sender ? (
-                  <LinkRow
-                    label="Your private link — keep this one"
-                    url={links.sender}
-                    tone="private"
-                    help="This is your secret page — see when they open it and what they send back. Don't send them this one."
-                  />
+                  <>
+                    <LinkRow
+                      label="Your private link — keep this one"
+                      url={links.sender}
+                      tone="private"
+                      help="This is your secret page — see when they open it and what they send back. Don't send them this one."
+                    />
+                    <p className="done__saved">
+                      Saved on this device — find it later under{' '}
+                      <a href="/mine">My cards</a>.
+                    </p>
+                  </>
                 ) : (
                   <p className="notice">
                     Running without a database, so this card travels inside its own link. It works perfectly and needs no

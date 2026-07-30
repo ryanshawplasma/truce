@@ -1,14 +1,18 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import Link from 'next/link';
 import BrandMark from './BrandMark';
 import CtaButton from './CtaButton';
 
+/* In-page anchors, plus one real route: `route: true` entries use next/link so
+   they navigate instead of scrolling. */
 const LINKS = [
   { href: '#how', label: 'How it works' },
   { href: '#messages', label: 'Messages' },
   { href: '#pricing', label: 'Pricing' },
   { href: '#faq', label: 'FAQ' },
+  { href: '/mine', label: 'My cards', route: true },
 ];
 
 export default function Nav() {
@@ -39,11 +43,17 @@ export default function Nav() {
         </a>
 
         <nav className="nav__links" aria-label="Primary">
-          {LINKS.map((l) => (
-            <a key={l.href} href={l.href}>
-              {l.label}
-            </a>
-          ))}
+          {LINKS.map((l) =>
+            l.route ? (
+              <Link key={l.href} href={l.href}>
+                {l.label}
+              </Link>
+            ) : (
+              <a key={l.href} href={l.href}>
+                {l.label}
+              </a>
+            ),
+          )}
         </nav>
 
         <CtaButton className="btn btn--primary btn--sm nav__cta">Make your card</CtaButton>
@@ -61,11 +71,17 @@ export default function Nav() {
       </div>
 
       <div className={`nav__drawer${menuOpen ? '' : ' hidden'}`} id="navDrawer">
-        {LINKS.map((l) => (
-          <a key={l.href} href={l.href} onClick={() => setMenuOpen(false)}>
-            {l.label}
-          </a>
-        ))}
+        {LINKS.map((l) =>
+          l.route ? (
+            <Link key={l.href} href={l.href} onClick={() => setMenuOpen(false)}>
+              {l.label}
+            </Link>
+          ) : (
+            <a key={l.href} href={l.href} onClick={() => setMenuOpen(false)}>
+              {l.label}
+            </a>
+          ),
+        )}
         <CtaButton className="btn btn--primary btn--wide">Make your card</CtaButton>
       </div>
     </header>

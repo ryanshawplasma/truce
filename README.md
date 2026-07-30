@@ -34,6 +34,8 @@ Free while in beta — no accounts, no payments, no card details.
 - **Open-tracking** — the first time the envelope is opened, we record it.
 - **A forgiveness meter** on the card and a **cuteness meter** in the maker —
   both purely for fun, neither is stored anywhere.
+- **"My cards"** at `/mine` — a rescue hatch for senders who close the tab and
+  lose their private link. Cards made on a device are remembered by that browser.
 - **A private stats page** at `/dev` — counts only, never card contents.
 - **Works with no setup at all** — with no database configured, cards are packed
   into the link itself (`/c/local#c=…`) and everything still works.
@@ -47,6 +49,7 @@ Free while in beta — no accounts, no payments, no card details.
 | `/c/demo` | A built-in sample card — no database needed |
 | `/c/local#c=…` | A card encoded entirely in the link (no-setup mode) |
 | `/s/{token}` | The sender's private page |
+| `/mine` | Cards made on this device (browser storage only) |
 | `/dev?key=…` | Private stats for whoever runs the site (see below) |
 
 ### Sticker packs
@@ -230,14 +233,38 @@ supabase/schema.sql        paste-into-Supabase database setup
 
 A few deliberate choices:
 
-- **Nothing is stored in the browser.** No localStorage, no cookies. The link is
-  the storage.
+- **The link is the storage.** No cookies, no accounts, no sessions. The one
+  exception is the small "My cards" list described below.
 - **All database access happens on the server.** `lib/supabase.js` imports
   `server-only`, so the build fails loudly if that ever changes.
 - **Everything the visitor types is re-validated on the server** in
   `app/actions.js` — lengths, allowed themes/styles, and the emoji allowlist.
 - **React escapes all text**, so a name like `<script>` is just an odd name.
   There is no `dangerouslySetInnerHTML` anywhere in this project.
+
+### Device memory and "My cards"
+
+Every card gives the sender two links: the public `/c/{id}` one they send, and
+the private `/s/{token}` one that shows opens, forgiveness and reactions. People
+close the tab and lose the private one, so when a card is created against a real
+database the browser keeps a small note of it — id, edit token, recipient's first
+name and the date — under the `truce.mycards` key in `localStorage`. `/mine`
+reads that list back, newest first, and the card page shows a quiet "this is your
+card" banner when the visitor is the one who made it.
+
+Privacy and robustness, because both matter here:
+
+- **It never leaves the device.** Nothing is sent to a server, there is no
+  account behind it, and it is not shared between phones or browsers. Those edit
+  tokens sit in the visitor's own browser and nowhere else.
+- **It is best-effort.** Every read and write is wrapped in `try/catch`
+  (`lib/mycards.js`). Private browsing, blocked storage or a full quota simply
+  means the list stays empty — nothing breaks, no error is shown, and creating
+  and sending cards keeps working exactly as before.
+- **Clearing browsing data clears it**, which `/mine` says out loud. The private
+  link is still the thing worth saving somewhere safe.
+- **No-setup (hash) mode is not remembered**, because those cards have no id and
+  no private page — the whole card already lives inside its own link.
 
 ### Adding another occasion later
 
