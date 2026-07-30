@@ -2,6 +2,7 @@ import { ImageResponse } from 'next/og';
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { getCardById } from '@/lib/cards';
+import { getOccasion, fill, DEFAULT_OCCASION } from '@/lib/occasions';
 
 /**
  * The picture that unfurls when a card link is pasted into a chat.
@@ -80,10 +81,12 @@ export default async function OpengraphImage({ params }) {
   const { id } = await params;
 
   let toName = '';
+  let occasionId = DEFAULT_OCCASION;
   try {
     if (id !== 'local') {
       const card = await getCardById(id);
       if (card && card.to_name) toName = String(card.to_name).trim().slice(0, 22);
+      if (card && card.occasion) occasionId = card.occasion;
     }
   } catch {
     /* An OG image must never fail loudly — fall back to the generic version. */
@@ -97,9 +100,9 @@ export default async function OpengraphImage({ params }) {
     readFile(join(process.cwd(), 'assets', 'Nunito-SemiBold.ttf')),
   ]);
 
-  const headline = toName
-    ? `${toName}, someone has something to say to you`
-    : 'Someone has something to say to you';
+  /* One line, occasion-appropriate, and never a word of the letter itself. */
+  const meta = getOccasion(occasionId).meta;
+  const headline = toName ? fill(meta.ogHeadline, { name: toName }) : meta.ogHeadlineFallback;
   /* Two comfortable lines is the goal; step down as the name gets longer. */
   const headlineSize = headline.length > 50 ? 46 : headline.length > 30 ? 54 : 60;
 

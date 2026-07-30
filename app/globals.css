@@ -15,30 +15,47 @@
    ========================================================================== */
 
 /* ---------- 1. Tokens & base ---------------------------------------------- */
+/* ============================================================================
+   APPEARANCE — the site-wide skin
+   ----------------------------------------------------------------------------
+   Two words that sound alike and mean different things. Keep them apart:
+
+     Appearance   the whole site's palette — nav, landing, maker, /mine,
+                  /couple, /s, /dev, 404. One setting per visitor, remembered
+                  in their browser, applied as data-appearance on <html>.
+                  Ships as "sky" (the default) and "blush" (the original look).
+
+     Theme        the palette of a single card, picked by the sender in the
+                  maker and carried inside the card itself. Those are the --t-*
+                  values further down, under .themed[data-theme="…"]. A card
+                  always wears the theme its sender chose, whatever appearance
+                  the person reading it happens to use.
+
+   Site chrome never reaches for a raw hex — it goes through the semantic
+   tokens below. Adding a third appearance is a matter of copying one block.
+
+   data-appearance is written by a tiny inline script in app/layout.js that runs
+   before the first paint, so a blush visitor never sees a flash of sky. With no
+   JavaScript at all the :root defaults apply and the site is simply sky.
+   ========================================================================== */
+
 :root{
-  --cream:#FFF7F2;
-  --cream-deep:#FDEDE4;
+  /* -- Brand constants ------------------------------------------------------
+     True in every appearance. The logo heart, the primary call-to-action
+     gradient and the confetti stay Truce rose whatever skin the site wears —
+     that pop of rose is the brand, and it looks its best against sky. */
   --rose:#E85D75;
-  --rose-deep:#B03A54;   /* AA: 5.0:1 on the blush eyebrow chip */
-  --rose-soft:#FFE4E9;
-  --plum:#3D2137;
-  --plum-mid:#6B4E63;
-  --plum-soft:#785A72;   /* AA: 5.7:1 on cream, 6.0:1 on white */
+  --rose-mid:#F0798C;          /* middle stop of the primary CTA gradient   */
+  --rose-halo:#FFE4E9;         /* the logo's blush circle — never shifts    */
   --gold:#F2B880;
   --gold-deep:#E09A57;
   --peach:#FFE0CC;
   --lilac:#EFE6FB;
   --white:#FFFFFF;
-
-  --line:rgba(61,33,55,.10);
-  --line-strong:rgba(61,33,55,.18);
-
-  --sh-xs:0 1px 2px rgba(61,33,55,.05);
-  --sh-sm:0 4px 14px rgba(61,33,55,.06);
-  --sh-md:0 12px 34px rgba(61,33,55,.09);
-  --sh-lg:0 26px 64px rgba(61,33,55,.14);
+  --err:#C22B45;
   --sh-rose:0 14px 30px rgba(232,93,117,.28);
 
+  /* -- Shape, space, type, motion ------------------------------------------ */
   --r-xs:10px;
   --r-sm:14px;
   --r:18px;
@@ -57,14 +74,145 @@
   --ease-out-back:cubic-bezier(.34,1.42,.64,1);
 }
 
+/* -- Appearance: Sky 💙 — the default -------------------------------------
+   Cool paper, warm-white cards, deep navy-plum ink. Contrast ratios in the
+   comments are measured against the background each token actually sits on;
+   every one of them clears WCAG AA (4.5:1). */
+:root,
+html[data-appearance="sky"]{
+  --page:#EAF4FE;
+  --page-deep:#DDEBFC;
+  --page-grad:linear-gradient(180deg,#EDF6FF 0%,#E5F0FD 55%,#DDEBFC 100%);
+
+  --ink:#223A54;               /* 10.5:1 on --page · 11.7:1 on white         */
+  --ink-mid:#3E5C7A;           /*  6.3:1 on --page ·  7.0:1 on white         */
+  --ink-soft:#4A6884;          /*  5.2:1 on --page ·  5.8:1 on white         */
+  --ink-faint:#9DB2C6;         /* input placeholders — never load-bearing    */
+  --ink-rgb:34,58,84;
+
+  --accent:#4A90D9;            /* decorative: borders, ticks, marks          */
+  --accent-deep:#2C6399;       /*  6.3:1 on white · 4.9:1 on the eyebrow chip*/
+  --accent-fill:#2C6399;       /* whenever white text sits on the accent     */
+  --accent-soft:#D7E9FC;
+  --accent-chip:rgba(198,224,250,.75);
+  --accent-chip-line:rgba(74,144,217,.26);
+  --accent-line:rgba(74,144,217,.45);
+  --accent-line-soft:rgba(74,144,217,.3);
+  --accent-hairline:rgba(74,144,217,.18);
+  --accent-ring:rgba(74,144,217,.16);
+  --accent-track:rgba(74,144,217,.16);
+  --sh-accent:0 14px 30px rgba(74,144,217,.28);
+
+  --sel-bg:#EDF5FE;
+  --sel-grad:linear-gradient(180deg,#fff,#EDF5FE);
+
+  --line:rgba(34,58,84,.12);
+  --line-strong:rgba(34,58,84,.2);
+  --sh-xs:0 1px 2px rgba(34,58,84,.06);
+  --sh-sm:0 4px 14px rgba(34,58,84,.07);
+  --sh-md:0 12px 34px rgba(34,58,84,.1);
+  --sh-lg:0 26px 64px rgba(34,58,84,.15);
+
+  --tint-grad:linear-gradient(180deg,rgba(196,223,251,.5) 0%,rgba(234,244,254,0) 100%);
+  --nav-bg:rgba(237,246,255,.82);
+  --nav-bg-solid:rgba(237,246,255,.97);
+  --overlay-grad:linear-gradient(170deg,#EDF6FF 0%,#E6F0FD 46%,#DEEAFB 100%);
+  --panel-bg:rgba(255,255,255,.55);
+  --soft-grad:linear-gradient(140deg,rgba(198,224,250,.6),rgba(227,221,250,.5));
+  --icon-grad:linear-gradient(140deg,#D7E9FC,#E7E3FB);
+  --blob-1:radial-gradient(circle,#BEDCFB 0%,rgba(190,220,251,0) 70%);
+  --blob-2:radial-gradient(circle,#CFE3FF 0%,rgba(207,227,255,0) 70%);
+  --blob-3:radial-gradient(circle,#E3DDFA 0%,rgba(227,221,250,0) 70%);
+  --finale-grad:linear-gradient(140deg,#DFEEFE 0%,#E8EEFE 52%,#F6E7F2 100%);
+  --beta-grad:linear-gradient(140deg,#FFFFFF 0%,#F1F7FF 48%,#E2EDFC 100%);
+
+  --footer-bg:#223A54;
+  --footer-ink:234,243,251;    /* 9.9:1 at full strength on --footer-bg      */
+  --toast-bg:#223A54;
+  --toast-ink:#EAF3FB;
+}
+
+/* -- Appearance: Blush 🌸 — the original look ----------------------------- */
+html[data-appearance="blush"]{
+  --page:#FFF7F2;
+  --page-deep:#FDEDE4;
+  --page-grad:none;
+
+  --ink:#3D2137;
+  --ink-mid:#6B4E63;           /*  6.9:1 on --page                           */
+  --ink-soft:#785A72;          /*  5.7:1 on --page · 6.0:1 on white          */
+  --ink-faint:#C4AFBE;
+  --ink-rgb:61,33,55;
+
+  --accent:#E85D75;
+  --accent-deep:#B03A54;       /*  5.1:1 on the eyebrow chip · 5.9:1 on white*/
+  --accent-fill:#B03A54;
+  --accent-soft:#FFE4E9;
+  --accent-chip:rgba(255,228,233,.75);
+  --accent-chip-line:rgba(232,93,117,.2);
+  --accent-line:rgba(232,93,117,.42);
+  --accent-line-soft:rgba(232,93,117,.28);
+  --accent-hairline:rgba(232,93,117,.14);
+  --accent-ring:rgba(232,93,117,.13);
+  --accent-track:rgba(232,93,117,.16);
+  --sh-accent:var(--sh-rose);
+
+  --sel-bg:#FFF4F6;
+  --sel-grad:linear-gradient(180deg,#fff,#FFF4F6);
+
+  --line:rgba(61,33,55,.10);
+  --line-strong:rgba(61,33,55,.18);
+  --sh-xs:0 1px 2px rgba(61,33,55,.05);
+  --sh-sm:0 4px 14px rgba(61,33,55,.06);
+  --sh-md:0 12px 34px rgba(61,33,55,.09);
+  --sh-lg:0 26px 64px rgba(61,33,55,.14);
+
+  --tint-grad:linear-gradient(180deg,rgba(255,228,233,.42) 0%,rgba(255,247,242,0) 100%);
+  --nav-bg:rgba(255,247,242,.82);
+  --nav-bg-solid:rgba(255,247,242,.97);
+  --overlay-grad:linear-gradient(170deg,#FFF7F2 0%,#FFF0EA 46%,#FDE7EE 100%);
+  --panel-bg:rgba(255,255,255,.55);
+  --soft-grad:linear-gradient(140deg,rgba(255,228,233,.55),rgba(255,224,204,.45));
+  --icon-grad:linear-gradient(140deg,#FFE4E9,#FFE0CC);
+  --blob-1:radial-gradient(circle,#FFC9D6 0%,rgba(255,201,214,0) 70%);
+  --blob-2:radial-gradient(circle,#FFD8B8 0%,rgba(255,216,184,0) 70%);
+  --blob-3:radial-gradient(circle,#EBDBFB 0%,rgba(235,219,251,0) 70%);
+  --finale-grad:linear-gradient(140deg,#FFE9EE 0%,#FFE0CF 52%,#F3E4FB 100%);
+  --beta-grad:linear-gradient(140deg,#FFFFFF 0%,#FFF3F0 48%,#FDECE2 100%);
+
+  --footer-bg:#3D2137;
+  --footer-ink:246,233,241;    /* 12.1:1 at full strength on --footer-bg     */
+  --toast-bg:#3D2137;
+  --toast-ink:#FFF7F2;
+}
+
+/* -- Names the rest of this stylesheet already used -----------------------
+   The site was built in blush, so hundreds of rules say --plum and --cream.
+   Rather than rewrite every one of them, those names now point at the
+   appearance tokens above. New code should prefer the semantic names. */
+:root{
+  --cream:var(--page);
+  --cream-deep:var(--page-deep);
+  --plum:var(--ink);
+  --plum-mid:var(--ink-mid);
+  --plum-soft:var(--ink-soft);
+  --rose-soft:var(--accent-soft);
+  --rose-deep:var(--accent-deep);
+}
+
 *,*::before,*::after{box-sizing:border-box}
 
 html{-webkit-text-size-adjust:100%;scroll-behavior:smooth}
 
 body{
   margin:0;
-  background:var(--cream);
-  color:var(--plum);
+  /* background-color + background-image (never the shorthand) so an appearance
+     can add a soft gradient without the other one having to opt out. */
+  background-color:var(--page);
+  background-image:var(--page-grad);
+  background-attachment:fixed;
+  background-repeat:no-repeat;
+  color:var(--ink);
   font-family:var(--font-body);
   font-size:17px;
   line-height:1.65;
@@ -150,14 +298,14 @@ ul{margin:0;padding:0;list-style:none}
 .eyebrow{
   display:inline-flex;align-items:center;gap:.5em;
   font-size:.78rem;font-weight:800;letter-spacing:.14em;text-transform:uppercase;
-  color:var(--rose-deep);
-  background:rgba(255,228,233,.75);
-  border:1px solid rgba(232,93,117,.2);
+  color:var(--accent-deep);
+  background:var(--accent-chip);
+  border:1px solid var(--accent-chip-line);
   padding:7px 15px;border-radius:var(--r-pill);
   margin-bottom:18px;
 }
 .section{padding:clamp(56px,9vw,104px) 0;position:relative}
-.section--tint{background:linear-gradient(180deg,rgba(255,228,233,.42) 0%,rgba(255,247,242,0) 100%)}
+.section--tint{background:var(--tint-grad)}
 .section--cream{background:var(--cream-deep)}
 .section-head{max-width:660px;margin:0 auto clamp(34px,5vw,56px);text-align:center}
 .section-head p{color:var(--plum-mid);font-size:1.06rem;margin:0}
@@ -183,30 +331,30 @@ ul{margin:0;padding:0;list-style:none}
   color:var(--plum);
   transition:border-color .2s var(--ease),box-shadow .2s var(--ease);
 }
-.input::placeholder,.textarea::placeholder{color:#C4AFBE}
+.input::placeholder,.textarea::placeholder{color:var(--ink-faint)}
 .input:focus,.textarea:focus{
-  outline:none;border-color:var(--rose);
-  box-shadow:0 0 0 4px rgba(232,93,117,.14);
+  outline:none;border-color:var(--accent);
+  box-shadow:0 0 0 4px var(--accent-ring);
 }
 .textarea{resize:vertical;min-height:132px;line-height:1.6}
 .input.is-invalid,.textarea.is-invalid{border-color:#E0455F;box-shadow:0 0 0 4px rgba(224,69,95,.12)}
-.err{color:#C22B45;font-size:.86rem;font-weight:700;margin:6px 0 0;min-height:1.2em}
+.err{color:var(--err);font-size:.86rem;font-weight:700;margin:6px 0 0;min-height:1.2em}
 
 /* ---------- 3. Navigation -------------------------------------------------- */
 .nav{
   position:sticky;top:0;z-index:60;
-  background:rgba(255,247,242,.82);
+  background:var(--nav-bg);
   backdrop-filter:saturate(150%) blur(14px);
   -webkit-backdrop-filter:saturate(150%) blur(14px);
   border-bottom:1px solid transparent;
   transition:border-color .3s var(--ease),box-shadow .3s var(--ease),background .3s var(--ease);
 }
-.nav.is-stuck{border-bottom-color:var(--line);box-shadow:0 6px 24px rgba(61,33,55,.05)}
+.nav.is-stuck{border-bottom-color:var(--line);box-shadow:0 6px 24px rgba(var(--ink-rgb),.06)}
 .nav__inner{display:flex;align-items:center;gap:16px;height:72px}
 .brand{display:inline-flex;align-items:center;gap:10px;font-family:var(--font-display);font-weight:700;font-size:1.28rem;letter-spacing:-.02em}
 .brand__mark{
   width:38px;height:38px;flex:0 0 38px;border-radius:50%;
-  background:radial-gradient(120% 120% at 30% 20%,#FFF1F4 0%,var(--rose-soft) 60%,#FFD9C9 100%);
+  background:radial-gradient(120% 120% at 30% 20%,#FFF1F4 0%,var(--rose-halo) 60%,#FFD9C9 100%);
   display:grid;place-items:center;
   box-shadow:inset 0 0 0 1px rgba(232,93,117,.16),var(--sh-xs);
 }
@@ -217,7 +365,7 @@ ul{margin:0;padding:0;list-style:none}
   font-weight:700;font-size:.95rem;color:var(--plum-mid);
   transition:color .2s var(--ease),background .2s var(--ease);
 }
-.nav__links a:hover{color:var(--plum);background:rgba(255,228,233,.7)}
+.nav__links a:hover{color:var(--ink);background:var(--accent-chip)}
 .nav__cta{margin-left:auto}
 .nav__toggle{
   margin-left:auto;width:44px;height:44px;border-radius:var(--r-sm);
@@ -237,7 +385,7 @@ ul{margin:0;padding:0;list-style:none}
 .nav__drawer{
   display:grid;gap:2px;padding:8px var(--pad) 20px;
   border-top:1px solid var(--line);
-  background:rgba(255,247,242,.97);
+  background:var(--nav-bg-solid);
 }
 .nav__drawer a{padding:13px 12px;border-radius:var(--r-sm);font-weight:700;color:var(--plum-mid)}
 .nav__drawer a:hover{background:var(--rose-soft);color:var(--plum)}
@@ -249,14 +397,72 @@ ul{margin:0;padding:0;list-style:none}
   .nav__toggle,.nav__drawer{display:none !important}
 }
 
+/* ---------- Appearance switch (the site skin: Sky 💙 / Blush 🌸) ----------
+   The label is chosen by CSS, not by React: both options are in the DOM and
+   the one that does not match html[data-appearance] is display:none — which
+   also keeps it out of the accessible name. That is what lets the button be
+   correct on the very first paint, before any JavaScript has run. */
+.appearance{
+  display:inline-flex;align-items:center;gap:8px;
+  font:inherit;font-weight:800;font-size:.88rem;line-height:1;
+  color:var(--ink-mid);
+  background:var(--accent-chip);
+  border:1px solid var(--accent-chip-line);
+  border-radius:var(--r-pill);
+  padding:10px 15px;
+  white-space:nowrap;
+  transition:color .2s var(--ease),border-color .2s var(--ease),background .2s var(--ease),transform .2s var(--ease);
+  -webkit-tap-highlight-color:transparent;
+}
+.appearance:hover{color:var(--ink);border-color:var(--accent-line);transform:translateY(-1px)}
+.appearance__opt{display:inline-flex;align-items:center;gap:7px}
+.appearance__name{font-weight:800}
+/* The nav pill has no room for the word, so it goes to screen readers only. */
+.appearance--pill .appearance__name{
+  position:absolute;width:1px;height:1px;padding:0;margin:-1px;
+  overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0;
+}
+.appearance--link .appearance__name::after{content:":"}
+.appearance__emoji{font-size:1.02rem;line-height:1}
+.appearance__hint{display:none}
+
+html[data-appearance="sky"] .appearance__opt--blush,
+html[data-appearance="blush"] .appearance__opt--sky{display:none}
+
+/* In the nav bar, desktop only — on a phone the drawer carries it, so the
+   bar keeps room for the one button that matters. */
+.appearance--pill{display:none}
+@media (min-width:900px){
+  .appearance--pill{display:inline-flex;margin-left:auto}
+  .appearance--pill + .nav__cta{margin-left:0}
+}
+
+/* In the mobile drawer: a full-width row that reads like a setting. */
+.appearance--row{
+  display:flex;width:100%;gap:10px;align-items:center;
+  margin-top:10px;padding:13px 14px;border-radius:var(--r-sm);
+  background:var(--accent-chip);
+}
+.appearance--row .appearance__opt{margin-left:auto}
+.appearance--row .appearance__hint{
+  display:inline;font-weight:700;font-size:.8rem;color:var(--ink-soft);
+}
+
+/* In the footer: a plain link among the other links. */
+.appearance--link{
+  background:transparent;border:0;padding:0;border-radius:0;
+  color:rgba(var(--footer-ink),.82);font-size:.95rem;font-weight:700;
+}
+.appearance--link:hover{color:rgb(var(--footer-ink));transform:none;background:transparent}
+
 /* ---------- 4. Landing ----------------------------------------------------- */
 /* Hero */
 .hero{position:relative;overflow:hidden;padding:clamp(46px,8vw,86px) 0 clamp(52px,8vw,92px)}
 .hero__bg{position:absolute;inset:0;pointer-events:none;z-index:0}
 .hero__blob{position:absolute;border-radius:50%;filter:blur(60px);opacity:.62}
-.hero__blob--1{width:52vw;height:52vw;max-width:620px;max-height:620px;top:-16%;right:-14%;background:radial-gradient(circle,#FFC9D6 0%,rgba(255,201,214,0) 70%)}
-.hero__blob--2{width:46vw;height:46vw;max-width:520px;max-height:520px;bottom:-18%;left:-16%;background:radial-gradient(circle,#FFD8B8 0%,rgba(255,216,184,0) 70%)}
-.hero__blob--3{width:34vw;height:34vw;max-width:400px;max-height:400px;top:24%;left:38%;background:radial-gradient(circle,#EBDBFB 0%,rgba(235,219,251,0) 70%)}
+.hero__blob--1{width:52vw;height:52vw;max-width:620px;max-height:620px;top:-16%;right:-14%;background:var(--blob-1)}
+.hero__blob--2{width:46vw;height:46vw;max-width:520px;max-height:520px;bottom:-18%;left:-16%;background:var(--blob-2)}
+.hero__blob--3{width:34vw;height:34vw;max-width:400px;max-height:400px;top:24%;left:38%;background:var(--blob-3)}
 .hero__inner{position:relative;z-index:2;display:grid;gap:clamp(38px,6vw,60px);align-items:center}
 .hero__copy{text-align:center;max-width:620px;margin-inline:auto}
 .hero h1 .accent{
@@ -281,7 +487,7 @@ ul{margin:0;padding:0;list-style:none}
 }
 .preview-card::before{
   content:"";position:absolute;inset:8px;border-radius:calc(var(--r-xl) - 8px);
-  border:1px dashed rgba(232,93,117,.28);pointer-events:none;
+  border:1px dashed var(--accent-line-soft);pointer-events:none;
 }
 .preview-card__tag{
   position:absolute;top:-14px;left:50%;transform:translateX(-50%);
@@ -322,7 +528,7 @@ ul{margin:0;padding:0;list-style:none}
 /* Proof strip */
 .proof{
   border-block:1px solid var(--line);
-  background:rgba(255,255,255,.55);
+  background:var(--panel-bg);
 }
 .proof__inner{
   display:flex;flex-wrap:wrap;justify-content:center;align-items:center;
@@ -353,7 +559,7 @@ ul{margin:0;padding:0;list-style:none}
   .steps{grid-template-columns:repeat(3,1fr);gap:24px}
   .step__line{
     display:block;position:absolute;top:52px;right:-24px;width:24px;height:2px;
-    background:repeating-linear-gradient(90deg,rgba(232,93,117,.42) 0 6px,transparent 6px 12px);
+    background:repeating-linear-gradient(90deg,var(--accent-line) 0 6px,transparent 6px 12px);
   }
   .step:last-child .step__line{display:none}
 }
@@ -367,12 +573,12 @@ ul{margin:0;padding:0;list-style:none}
   padding:26px 24px;box-shadow:var(--sh-xs);
   transition:transform .3s var(--ease),box-shadow .3s var(--ease),border-color .3s var(--ease);
 }
-.feature:hover{transform:translateY(-4px);box-shadow:var(--sh-md);border-color:rgba(232,93,117,.28)}
+.feature:hover{transform:translateY(-4px);box-shadow:var(--sh-md);border-color:var(--accent-line-soft)}
 .feature__icon{
   width:52px;height:52px;border-radius:16px;display:grid;place-items:center;
   font-size:1.5rem;margin-bottom:15px;
-  background:linear-gradient(140deg,var(--rose-soft),var(--peach));
-  box-shadow:inset 0 0 0 1px rgba(232,93,117,.12);
+  background:var(--icon-grad);
+  box-shadow:inset 0 0 0 1px var(--accent-hairline);
 }
 .feature h3{margin-bottom:8px}
 .feature p{margin:0;color:var(--plum-mid);font-size:.96rem}
@@ -384,7 +590,7 @@ ul{margin:0;padding:0;list-style:none}
   background:#fff;border:1px solid var(--line);color:var(--plum-mid);
   transition:all .2s var(--ease);
 }
-.tab:hover{border-color:var(--rose);color:var(--rose-deep)}
+.tab:hover{border-color:var(--accent);color:var(--accent-deep)}
 .tab[aria-selected="true"]{background:var(--plum);border-color:var(--plum);color:#fff;box-shadow:var(--sh-sm)}
 .quotes{display:grid;gap:14px}
 @media (min-width:760px){.quotes{grid-template-columns:repeat(2,1fr)}}
@@ -418,8 +624,8 @@ ul{margin:0;padding:0;list-style:none}
 .praise__who{display:flex;align-items:center;gap:11px}
 .praise__avatar{
   width:38px;height:38px;border-radius:50%;display:grid;place-items:center;
-  font-weight:800;font-size:.9rem;color:var(--rose-deep);
-  background:linear-gradient(140deg,var(--rose-soft),var(--peach));
+  font-weight:800;font-size:.9rem;color:var(--accent-deep);
+  background:var(--icon-grad);
 }
 .praise__who b{display:block;font-size:.93rem}
 .praise__who small{color:var(--plum-soft);font-size:.82rem;font-weight:600}
@@ -430,7 +636,7 @@ ul{margin:0;padding:0;list-style:none}
   background:#fff;border:1px solid var(--line);border-radius:var(--r-lg);
   box-shadow:var(--sh-xs);overflow:hidden;transition:border-color .25s var(--ease),box-shadow .25s var(--ease);
 }
-.faq details[open]{border-color:rgba(232,93,117,.34);box-shadow:var(--sh-sm)}
+.faq details[open]{border-color:var(--accent-line);box-shadow:var(--sh-sm)}
 .faq summary{
   list-style:none;cursor:pointer;padding:20px 56px 20px 22px;position:relative;
   font-weight:800;font-size:1.02rem;color:var(--plum);
@@ -438,7 +644,7 @@ ul{margin:0;padding:0;list-style:none}
 .faq summary::-webkit-details-marker{display:none}
 .faq summary::after{
   content:"";position:absolute;right:22px;top:50%;width:11px;height:11px;
-  border-right:2.4px solid var(--rose);border-bottom:2.4px solid var(--rose);
+  border-right:2.4px solid var(--accent);border-bottom:2.4px solid var(--accent);
   transform:translateY(-70%) rotate(45deg);transition:transform .3s var(--ease);
 }
 .faq details[open] summary::after{transform:translateY(-25%) rotate(-135deg)}
@@ -451,7 +657,7 @@ ul{margin:0;padding:0;list-style:none}
   position:relative;overflow:hidden;text-align:center;
   border-radius:var(--r-xl);
   padding:clamp(40px,7vw,68px) clamp(22px,5vw,54px);
-  background:linear-gradient(140deg,#FFE9EE 0%,#FFE0CF 52%,#F3E4FB 100%);
+  background:var(--finale-grad);
   border:1px solid rgba(255,255,255,.8);
   box-shadow:var(--sh-md);
 }
@@ -460,18 +666,18 @@ ul{margin:0;padding:0;list-style:none}
 .finale__actions{display:flex;flex-wrap:wrap;gap:12px;justify-content:center}
 
 /* ---------- 5. Footer ------------------------------------------------------ */
-.footer{background:var(--plum);color:#F6E9F1;padding:clamp(46px,7vw,70px) 0 30px;margin-top:clamp(46px,7vw,80px)}
-.footer a{color:#F6E9F1}
+.footer{background:var(--footer-bg);color:rgb(var(--footer-ink));padding:clamp(46px,7vw,70px) 0 30px;margin-top:clamp(46px,7vw,80px)}
+.footer a{color:rgb(var(--footer-ink))}
 .footer__grid{display:grid;gap:34px}
 @media (min-width:820px){.footer__grid{grid-template-columns:1.5fr 1fr 1fr 1fr;gap:38px}}
 .footer .brand{color:#fff}
 .footer .brand__mark{background:rgba(255,255,255,.12);box-shadow:inset 0 0 0 1px rgba(255,255,255,.16)}
-.footer__tag{margin:14px 0 6px;color:rgba(246,233,241,.72);max-width:290px;font-size:.96rem}
+.footer__tag{margin:14px 0 6px;color:rgba(var(--footer-ink),.74);max-width:290px;font-size:.96rem}
 .footer__mail{font-weight:800;color:var(--gold)}
 .footer__mail:hover{text-decoration:underline}
-.footer__col h4{font-size:.78rem;letter-spacing:.14em;text-transform:uppercase;color:rgba(246,233,241,.55);font-family:var(--font-body);font-weight:800;margin-bottom:14px}
+.footer__col h4{font-size:.78rem;letter-spacing:.14em;text-transform:uppercase;color:rgba(var(--footer-ink),.68);font-family:var(--font-body);font-weight:800;margin-bottom:14px}
 .footer__col li{margin-bottom:10px}
-.footer__col a{color:rgba(246,233,241,.82);font-size:.95rem;transition:color .2s var(--ease)}
+.footer__col a{color:rgba(var(--footer-ink),.82);font-size:.95rem;transition:color .2s var(--ease)}
 .footer__col a:hover{color:#fff}
 .soon{
   display:inline-block;margin-left:7px;font-size:.62rem;font-weight:800;letter-spacing:.09em;
@@ -479,9 +685,9 @@ ul{margin:0;padding:0;list-style:none}
   padding:3px 8px;border-radius:var(--r-pill);vertical-align:middle;
 }
 .footer__base{
-  margin-top:38px;padding-top:22px;border-top:1px solid rgba(246,233,241,.14);
+  margin-top:38px;padding-top:22px;border-top:1px solid rgba(var(--footer-ink),.16);
   display:flex;flex-wrap:wrap;gap:10px 20px;justify-content:space-between;
-  font-size:.83rem;color:rgba(246,233,241,.62);
+  font-size:.83rem;color:rgba(var(--footer-ink),.70);
 }
 
 /* ---------- 6. Wizard ------------------------------------------------------ */
@@ -491,7 +697,7 @@ ul{margin:0;padding:0;list-style:none}
 
 .wizard{
   position:fixed;inset:0;z-index:90;
-  background:linear-gradient(170deg,var(--cream) 0%,#FFF0EA 46%,#FDE7EE 100%);
+  background:var(--overlay-grad);
   overflow-y:auto;overscroll-behavior:contain;
   display:flex;flex-direction:column;
   animation:overlayIn .3s var(--ease) both;
@@ -499,7 +705,7 @@ ul{margin:0;padding:0;list-style:none}
 @keyframes overlayIn{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
 .wizard__bar{
   position:sticky;top:0;z-index:3;
-  background:rgba(255,247,242,.9);
+  background:var(--nav-bg);
   backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);
   border-bottom:1px solid var(--line);
 }
@@ -513,7 +719,7 @@ ul{margin:0;padding:0;list-style:none}
 .icon-btn:hover{background:#fff;color:var(--rose-deep);transform:translateY(-1px)}
 .icon-btn[disabled]{opacity:.35;cursor:default;transform:none}
 .wizard__progress{flex:1;display:flex;flex-direction:column;gap:6px;min-width:0}
-.wizard__track{height:7px;border-radius:var(--r-pill);background:rgba(232,93,117,.16);overflow:hidden}
+.wizard__track{height:7px;border-radius:var(--r-pill);background:var(--accent-track);overflow:hidden}
 .wizard__fill{
   height:100%;width:0;border-radius:var(--r-pill);
   background:linear-gradient(90deg,var(--rose),var(--gold));
@@ -530,7 +736,7 @@ ul{margin:0;padding:0;list-style:none}
 @keyframes stepInBack{from{opacity:0;transform:translateX(-26px)}to{opacity:1;transform:none}}
 @keyframes riseIn{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
 
-.wstep__kicker{font-size:.76rem;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:var(--rose-deep);margin-bottom:10px}
+.wstep__kicker{font-size:.76rem;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:var(--accent-deep);margin-bottom:10px}
 .wstep h2{font-size:clamp(1.6rem,4.6vw,2.2rem);margin-bottom:8px}
 .wstep__sub{color:var(--plum-mid);margin-bottom:26px;font-size:1rem}
 
@@ -546,17 +752,17 @@ ul{margin:0;padding:0;list-style:none}
   transition:transform .22s var(--ease),border-color .22s var(--ease),box-shadow .22s var(--ease),background .22s var(--ease);
   position:relative;
 }
-.opt:hover{transform:translateY(-3px);border-color:rgba(232,93,117,.42);box-shadow:var(--sh-sm)}
+.opt:hover{transform:translateY(-3px);border-color:var(--accent-line);box-shadow:var(--sh-sm)}
 .opt__emoji{font-size:1.9rem;line-height:1}
 .opt__label{font-weight:800;font-size:.95rem;line-height:1.25}
 .opt__desc{font-size:.82rem;color:var(--plum-soft);font-weight:600;line-height:1.35}
 .opt.is-on{
-  border-color:var(--rose);background:linear-gradient(180deg,#fff,#FFF4F6);
-  box-shadow:0 0 0 4px rgba(232,93,117,.13),var(--sh-sm);
+  border-color:var(--accent);background:var(--sel-grad);
+  box-shadow:0 0 0 4px var(--accent-ring),var(--sh-sm);
 }
 .opt.is-on::after{
   content:"✓";position:absolute;top:9px;right:11px;
-  width:21px;height:21px;border-radius:50%;background:var(--rose);color:#fff;
+  width:21px;height:21px;border-radius:50%;background:var(--accent-fill);color:#fff;
   font-size:.72rem;font-weight:800;display:grid;place-items:center;
   animation:pop .3s var(--ease-out-back) both;
 }
@@ -571,8 +777,8 @@ ul{margin:0;padding:0;list-style:none}
   background:#fff;border:2px solid var(--line);color:var(--plum-mid);
   transition:all .2s var(--ease);
 }
-.chip:hover{border-color:rgba(232,93,117,.42);color:var(--plum)}
-.chip.is-on{background:var(--rose);border-color:var(--rose);color:#fff;box-shadow:var(--sh-rose)}
+.chip:hover{border-color:var(--accent-line);color:var(--ink)}
+.chip.is-on{background:var(--accent-fill);border-color:var(--accent-fill);color:#fff;box-shadow:var(--sh-accent)}
 
 .msg-list{
   display:grid;gap:10px;max-height:min(46vh,380px);overflow-y:auto;
@@ -581,14 +787,14 @@ ul{margin:0;padding:0;list-style:none}
   scrollbar-width:thin;
 }
 .msg-list::-webkit-scrollbar{width:9px}
-.msg-list::-webkit-scrollbar-thumb{background:rgba(232,93,117,.3);border-radius:9px;border:3px solid transparent;background-clip:content-box}
+.msg-list::-webkit-scrollbar-thumb{background:var(--accent-line-soft);border-radius:9px;border:3px solid transparent;background-clip:content-box}
 .msg-opt{
   text-align:left;background:#fff;border:2px solid var(--line);border-radius:var(--r-sm);
   padding:14px 16px;font-size:.96rem;line-height:1.5;color:var(--plum);
   transition:all .2s var(--ease);
 }
-.msg-opt:hover{border-color:rgba(232,93,117,.42);transform:translateX(2px)}
-.msg-opt.is-on{border-color:var(--rose);background:#FFF4F6;box-shadow:0 0 0 3px rgba(232,93,117,.12)}
+.msg-opt:hover{border-color:var(--accent-line);transform:translateX(2px)}
+.msg-opt.is-on{border-color:var(--accent);background:var(--sel-bg);box-shadow:0 0 0 3px var(--accent-ring)}
 .msg-empty{padding:26px 16px;text-align:center;color:var(--plum-soft);font-weight:600}
 
 .themes{display:grid;gap:13px;grid-template-columns:repeat(2,1fr)}
@@ -598,8 +804,8 @@ ul{margin:0;padding:0;list-style:none}
   border:2px solid var(--line);border-radius:var(--r-lg);overflow:hidden;background:#fff;
   box-shadow:var(--sh-xs);transition:all .22s var(--ease);position:relative;
 }
-.theme-opt:hover{transform:translateY(-3px);box-shadow:var(--sh-sm);border-color:rgba(232,93,117,.42)}
-.theme-opt.is-on{border-color:var(--rose);box-shadow:0 0 0 4px rgba(232,93,117,.13),var(--sh-sm)}
+.theme-opt:hover{transform:translateY(-3px);box-shadow:var(--sh-sm);border-color:var(--accent-line)}
+.theme-opt.is-on{border-color:var(--accent);box-shadow:0 0 0 4px var(--accent-ring),var(--sh-sm)}
 .theme-opt__swatch{height:76px;display:flex;align-items:flex-end;padding:9px;gap:6px}
 .theme-opt__dot{width:20px;height:20px;border-radius:50%;box-shadow:0 1px 4px rgba(0,0,0,.16)}
 .theme-opt__name{padding:11px 12px 13px;font-weight:800;font-size:.9rem;text-align:center}
@@ -646,7 +852,7 @@ ul{margin:0;padding:0;list-style:none}
   color:var(--plum-mid);text-overflow:ellipsis;padding:4px 0;
 }
 .linkbox input:focus{outline:none}
-.copy-state{min-height:1.4em;font-size:.86rem;font-weight:800;color:var(--rose-deep)}
+.copy-state{min-height:1.4em;font-size:.86rem;font-weight:800;color:var(--accent-deep)}
 .done__actions{display:grid;gap:11px;margin-top:20px}
 @media (min-width:560px){.done__actions{grid-template-columns:1fr 1fr}}
 .notice{
@@ -1100,7 +1306,7 @@ ul{margin:0;padding:0;list-style:none}
   position:relative;overflow:hidden;text-align:center;
   border-radius:var(--r-xl);
   padding:clamp(38px,7vw,66px) clamp(22px,5vw,54px);
-  background:linear-gradient(140deg,#FFFFFF 0%,#FFF3F0 48%,#FDECE2 100%);
+  background:var(--beta-grad);
   border:1px solid rgba(255,255,255,.9);
   box-shadow:var(--sh-md);
 }
@@ -1277,7 +1483,7 @@ ul{margin:0;padding:0;list-style:none}
   transition:transform .2s var(--ease-out-back),border-color .2s var(--ease),background .2s var(--ease);
   -webkit-tap-highlight-color:transparent;
 }
-.emoji-chip:hover{transform:translateY(-3px) scale(1.08);border-color:rgba(232,93,117,.45);background:#FFF6F8}
+.emoji-chip:hover{transform:translateY(-3px) scale(1.08);border-color:var(--accent-line);background:var(--sel-bg)}
 .emoji-chip:active{transform:scale(.94)}
 
 @media (prefers-reduced-motion:reduce){
@@ -1368,7 +1574,7 @@ ul{margin:0;padding:0;list-style:none}
   background:#fff;border:1.5px solid var(--line);color:var(--plum-mid);
   transition:all .2s var(--ease);
 }
-.pack-tab:hover{border-color:rgba(232,93,117,.45);color:var(--plum)}
+.pack-tab:hover{border-color:var(--accent-line);color:var(--ink)}
 .pack-tab[aria-selected="true"]{
   background:var(--plum);border-color:var(--plum);color:#fff;box-shadow:var(--sh-sm);
 }
@@ -1541,14 +1747,14 @@ ul{margin:0;padding:0;list-style:none}
   transition:transform .22s var(--ease),border-color .22s var(--ease),box-shadow .22s var(--ease),background .22s var(--ease);
   -webkit-tap-highlight-color:transparent;
 }
-.sticker-pick:hover{transform:translateY(-3px);border-color:rgba(232,93,117,.42);box-shadow:var(--sh-sm)}
+.sticker-pick:hover{transform:translateY(-3px);border-color:var(--accent-line);box-shadow:var(--sh-sm)}
 .sticker-pick.is-on{
-  border-color:var(--rose);background:linear-gradient(180deg,#fff,#FFF4F6);
-  box-shadow:0 0 0 4px rgba(232,93,117,.13),var(--sh-sm);
+  border-color:var(--accent);background:var(--sel-grad);
+  box-shadow:0 0 0 4px var(--accent-ring),var(--sh-sm);
 }
 .sticker-pick.is-on::after{
   content:"✓";position:absolute;top:6px;right:7px;
-  width:20px;height:20px;border-radius:50%;background:var(--rose);color:#fff;
+  width:20px;height:20px;border-radius:50%;background:var(--accent-fill);color:#fff;
   font-size:.7rem;font-weight:800;display:grid;place-items:center;
   animation:pop .3s var(--ease-out-back) both;
 }
@@ -1558,8 +1764,8 @@ ul{margin:0;padding:0;list-style:none}
 .sticker-count{
   display:inline-flex;align-items:center;gap:8px;margin-bottom:16px;
   font-size:.8rem;font-weight:800;letter-spacing:.06em;text-transform:uppercase;
-  color:var(--rose-deep);background:rgba(255,228,233,.7);
-  border:1px solid rgba(232,93,117,.2);padding:7px 15px;border-radius:var(--r-pill);
+  color:var(--accent-deep);background:var(--accent-chip);
+  border:1px solid var(--accent-chip-line);padding:7px 15px;border-radius:var(--r-pill);
 }
 
 /* ---------- The sticker tray on the card --------------------------------- */
@@ -1745,15 +1951,15 @@ ul{margin:0;padding:0;list-style:none}
 .cuteness__title{
   font-size:.68rem;font-weight:800;letter-spacing:.15em;text-transform:uppercase;color:var(--plum-soft);
 }
-.cuteness__label{display:inline-block;font-size:.9rem;font-weight:800;color:var(--rose-deep)}
-.cuteness__track{height:10px;border-radius:var(--r-pill);background:rgba(232,93,117,.14);overflow:hidden}
+.cuteness__label{display:inline-block;font-size:.9rem;font-weight:800;color:var(--accent-deep)}
+.cuteness__track{height:10px;border-radius:var(--r-pill);background:var(--accent-track);overflow:hidden}
 .cuteness__fill{
   display:block;height:100%;border-radius:var(--r-pill);
   background:linear-gradient(90deg,var(--rose),var(--gold));
   transition:width .6s var(--ease-out-back);
 }
 .cuteness__hint{margin:10px 0 0;font-size:.82rem;color:var(--plum-soft);font-weight:600}
-.cuteness.is-max{border-color:rgba(232,93,117,.45);box-shadow:0 0 0 4px rgba(232,93,117,.1)}
+.cuteness.is-max{border-color:var(--accent-line);box-shadow:0 0 0 4px var(--accent-ring)}
 .cuteness.is-max .cuteness__label{animation:cutePulse 1.6s var(--ease) infinite}
 @keyframes cutePulse{0%,100%{transform:scale(1)}50%{transform:scale(1.07)}}
 .done .cuteness{margin-top:22px;text-align:left}
@@ -1901,8 +2107,8 @@ ul{margin:0;padding:0;list-style:none}
 .done__saved{
   margin:10px 0 0;font-size:.86rem;font-weight:700;color:var(--plum-soft);text-align:left;
 }
-.done__saved a{color:var(--rose-deep);border-bottom:1.5px solid rgba(232,93,117,.4);padding-bottom:1px}
-.done__saved a:hover{border-bottom-color:var(--rose-deep)}
+.done__saved a{color:var(--accent-deep);border-bottom:1.5px solid var(--accent-line);padding-bottom:1px}
+.done__saved a:hover{border-bottom-color:var(--accent-deep)}
 
 /* ---- /mine ------------------------------------------------------------- */
 .mycards{list-style:none;margin:0;padding:0;display:grid;gap:12px}
@@ -1912,7 +2118,7 @@ ul{margin:0;padding:0;list-style:none}
   padding:16px 17px;box-shadow:var(--sh-xs);
   transition:border-color .2s var(--ease),box-shadow .2s var(--ease);
 }
-.mycard:hover{border-color:rgba(232,93,117,.3);box-shadow:var(--sh-sm)}
+.mycard:hover{border-color:var(--accent-line-soft);box-shadow:var(--sh-sm)}
 .mycard__main{min-width:0}
 .mycard__to{
   margin:0;font-family:var(--font-display);font-weight:600;font-size:1.14rem;
@@ -1927,8 +2133,8 @@ ul{margin:0;padding:0;list-style:none}
 }
 .mycard__badge--hash{background:rgba(139,107,214,.14);color:#6B4FB0}
 .deleted-note{
-  border-color:rgba(232,93,117,.3);
-  background:linear-gradient(180deg,#FFF4F6,#fff);
+  border-color:var(--accent-line-soft);
+  background:linear-gradient(180deg,var(--sel-bg),#fff);
 }
 .deleted-note p{margin:0;font-size:.95rem;color:var(--plum-mid);line-height:1.55}
 .deleted-note b{color:var(--plum)}
@@ -2026,14 +2232,14 @@ ul{margin:0;padding:0;list-style:none}
 
 /* ---- Suggested stickers -------------------------------------------------- */
 .suggest{
-  background:linear-gradient(140deg,rgba(255,228,233,.55),rgba(255,224,204,.45));
-  border:1px solid rgba(232,93,117,.18);
+  background:var(--soft-grad);
+  border:1px solid var(--accent-hairline);
   border-radius:var(--r-lg);
   padding:14px 14px 12px;margin:0 0 18px;
 }
 .suggest__label{
   margin:0 0 10px;font-size:.74rem;font-weight:800;letter-spacing:.12em;
-  text-transform:uppercase;color:var(--rose-deep);
+  text-transform:uppercase;color:var(--accent-deep);
 }
 .suggest__row{display:grid;grid-template-columns:repeat(3,1fr);gap:9px}
 .suggest__pick{
@@ -2042,8 +2248,8 @@ ul{margin:0;padding:0;list-style:none}
   padding:10px 6px 9px;box-shadow:var(--sh-xs);
   transition:transform .2s var(--ease),border-color .2s var(--ease),box-shadow .2s var(--ease);
 }
-.suggest__pick:hover{transform:translateY(-3px);border-color:rgba(232,93,117,.45)}
-.suggest__pick.is-on{border-color:var(--rose);background:#FFF4F6;box-shadow:0 0 0 3px rgba(232,93,117,.13)}
+.suggest__pick:hover{transform:translateY(-3px);border-color:var(--accent-line)}
+.suggest__pick.is-on{border-color:var(--accent);background:var(--sel-bg);box-shadow:0 0 0 3px var(--accent-ring)}
 .suggest__pick[disabled]{opacity:.45;cursor:not-allowed;transform:none}
 .suggest__name{
   font-size:.72rem;font-weight:800;line-height:1.2;text-align:center;color:var(--plum-mid);
@@ -2055,7 +2261,7 @@ ul{margin:0;padding:0;list-style:none}
   padding:14px 16px;margin:18px 0 16px;background:#fff;
   transition:border-color .2s var(--ease),background .2s var(--ease);
 }
-.capsule.is-on{border-color:rgba(232,93,117,.45);background:#FFF9FA}
+.capsule.is-on{border-color:var(--accent-line);background:var(--sel-bg)}
 .capsule__switch{display:flex;align-items:flex-start;gap:12px;cursor:pointer}
 .capsule__switch input{
   position:absolute;opacity:0;width:1px;height:1px;
@@ -2166,7 +2372,7 @@ ul{margin:0;padding:0;list-style:none}
   /* dvh so an on-screen keyboard cannot push the composer off the bottom */
   height:100dvh;min-height:100svh;
   display:flex;flex-direction:column;
-  background:linear-gradient(180deg,#F4F8FF 0%,#FFF7F2 62%);
+  background:linear-gradient(180deg,#F4F8FF 0%,var(--page) 62%);
 }
 .corner__head{
   flex:0 0 auto;display:flex;align-items:center;gap:12px;
@@ -2249,7 +2455,7 @@ ul{margin:0;padding:0;list-style:none}
   transition:border-color .2s var(--ease),box-shadow .2s var(--ease);
 }
 .corner__input:focus{
-  outline:none;border-color:var(--rose);box-shadow:0 0 0 4px rgba(232,93,117,.13);
+  outline:none;border-color:var(--accent);box-shadow:0 0 0 4px var(--accent-ring);
 }
 .corner__send{
   flex:0 0 46px;width:46px;height:46px;padding:0;border-radius:50%;
@@ -2257,7 +2463,7 @@ ul{margin:0;padding:0;list-style:none}
 }
 .corner__note{
   margin:0;padding:0 var(--pad);min-height:1.2em;font-size:.82rem;font-weight:700;
-  color:var(--rose-deep);text-align:center;
+  color:var(--accent-deep);text-align:center;
 }
 .corner__foot{
   margin:0;padding:6px var(--pad) calc(10px + env(safe-area-inset-bottom,0px));
@@ -2307,8 +2513,8 @@ ul{margin:0;padding:0;list-style:none}
   font-size:.6rem;font-weight:800;letter-spacing:.12em;text-transform:uppercase;
   line-height:1;white-space:nowrap;vertical-align:middle;
   color:var(--rose-deep);
-  background:rgba(255,228,233,.9);
-  border:1px solid rgba(232,93,117,.26);
+  background:var(--accent-chip);
+  border:1px solid var(--accent-chip-line);
   padding:4px 8px 4px 7px;border-radius:var(--r-pill);
 }
 .beta-chip__dot{
@@ -2359,7 +2565,7 @@ ul{margin:0;padding:0;list-style:none}
   transition:transform .2s var(--ease),border-color .2s var(--ease),box-shadow .2s var(--ease);
   -webkit-tap-highlight-color:transparent;
 }
-.share-btn:hover{transform:translateY(-2px);box-shadow:var(--sh-sm);border-color:rgba(232,93,117,.34)}
+.share-btn:hover{transform:translateY(-2px);box-shadow:var(--sh-sm);border-color:var(--accent-line)}
 .share-btn:active{transform:translateY(0) scale(.98)}
 .share-btn__glyph{display:block;width:24px;height:24px}
 .share-btn__glyph svg{display:block;width:24px;height:24px}
@@ -2497,3 +2703,145 @@ ul{margin:0;padding:0;list-style:none}
   .forgive__loading-heart{animation:none !important}
   .share-btn:hover,.cutetap:active{transform:none}
 }
+
+/* ==========================================================================
+   14. Occasions — birthday 🎂 and proposal 💍
+   --------------------------------------------------------------------------
+   The maker and the card were already occasion-driven in their copy (see
+   lib/occasions.js); this is the only visual furniture the two new occasions
+   needed. Everything themes itself from the same --t-* custom properties as
+   the rest of the card, so the cake looks right on Midnight Plum as well as
+   on Blush Rose.
+   ========================================================================== */
+
+/* ---------- The "Also: Birthday · Proposal" row under the hero ----------- */
+.occasion-row{
+  display:flex;flex-wrap:wrap;align-items:center;justify-content:center;
+  gap:4px 8px;margin:16px 0 0;font-size:.95rem;font-weight:700;
+  color:var(--plum-soft);
+}
+.occasion-row__label{color:var(--plum-soft)}
+.occasion-row__dot{margin:0 8px 0 4px;color:var(--line-strong)}
+.occasion-row__btn{
+  font:inherit;font-weight:800;color:var(--accent-deep);
+  padding:5px 12px;border-radius:var(--r-pill);
+  border:1px solid transparent;background:var(--accent-chip);
+  transition:background .2s var(--ease),border-color .2s var(--ease),transform .2s var(--ease);
+}
+.occasion-row__btn:hover{
+  background:#fff;border-color:var(--accent-line);transform:translateY(-1px);
+}
+@media (min-width:900px){
+  .occasion-row{justify-content:flex-start}
+}
+
+/* ---------- The birthday cake -------------------------------------------- */
+.cake__sub{
+  margin:-8px 0 18px;color:var(--t-ink-soft);font-size:.95rem;font-weight:600;
+}
+.cake{
+  position:relative;width:min(290px,78vw);margin:0 auto;
+  display:flex;flex-direction:column;align-items:center;
+}
+.cake__art{display:block;width:100%;height:auto;overflow:visible}
+.cake__count{
+  margin:14px 0 0;font-size:.88rem;font-weight:800;letter-spacing:.04em;
+  color:var(--t-ink-soft);
+}
+
+/* The candles sit in a row and overlap the frosting a little, so they read as
+   planted in the cake rather than floating above it. */
+.cake__candles{
+  display:flex;align-items:flex-end;justify-content:center;
+  gap:clamp(13px,5.5vw,24px);
+  /* Sunk into the frosting, not hovering over it. */
+  margin-bottom:-13px;position:relative;z-index:2;
+}
+
+/* Each candle is a real button: a comfortable tap target with a thin drawing
+   inside it, so a five-year-old with a phone can put one out on the first try. */
+.candle{
+  position:relative;display:flex;flex-direction:column;align-items:center;
+  padding:10px 8px 0;background:none;border:0;cursor:pointer;
+  -webkit-tap-highlight-color:transparent;
+  transition:transform .2s var(--ease);
+}
+.candle:hover:not(:disabled){transform:translateY(-3px)}
+.candle:active:not(:disabled){transform:translateY(-1px) scale(.97)}
+.candle:disabled{cursor:default}
+
+.candle__flame{
+  width:13px;height:19px;border-radius:50% 50% 46% 46%;
+  background:radial-gradient(60% 60% at 50% 72%,#FFF3C4 0%,var(--gold) 46%,#F0873F 100%);
+  box-shadow:0 0 14px rgba(242,184,128,.85),0 0 30px rgba(240,135,63,.45);
+  transform-origin:50% 100%;
+  animation:flicker 1.1s ease-in-out infinite;
+}
+@keyframes flicker{
+  0%,100%{transform:scale(1) rotate(-2deg);opacity:1}
+  35%{transform:scale(1.1,.94) rotate(3deg);opacity:.92}
+  70%{transform:scale(.94,1.08) rotate(-3deg);opacity:1}
+}
+.candle__wick{
+  width:2px;height:5px;border-radius:1px;background:var(--t-ink);opacity:.65;
+}
+.candle__stick{
+  width:9px;height:38px;border-radius:4px 4px 2px 2px;
+  background:repeating-linear-gradient(
+    -35deg,
+    var(--t-paper) 0 5px,
+    var(--t-accent) 5px 10px
+  );
+  box-shadow:inset -2px 0 0 rgba(0,0,0,.08);
+}
+
+/* Blown out: the flame goes, a wisp of smoke drifts up, the candle dims. */
+.candle.is-out .candle__flame{opacity:0;transform:scale(.2);transition:opacity .18s,transform .18s}
+.candle.is-out .candle__stick{filter:saturate(.55);opacity:.72}
+.candle.is-out .candle__wick{opacity:.9}
+.candle__smoke{
+  position:absolute;top:-2px;left:50%;
+  width:9px;height:9px;border-radius:50%;
+  background:var(--t-ink);opacity:0;
+  transform:translate(-50%,0);
+  pointer-events:none;
+}
+.candle.is-out .candle__smoke{animation:smokeUp 1.5s var(--ease) forwards}
+@keyframes smokeUp{
+  0%{opacity:.34;transform:translate(-50%,0) scale(.5)}
+  45%{opacity:.22;transform:translate(-58%,-24px) scale(1.05)}
+  100%{opacity:0;transform:translate(-44%,-52px) scale(1.7)}
+}
+
+@media (prefers-reduced-motion:reduce){
+  .candle__flame{animation:none}
+  .candle.is-out .candle__smoke{animation:none;opacity:0}
+  .candle:hover:not(:disabled){transform:none}
+}
+
+/* ---------- "Our corner", explained --------------------------------------
+   The door used to open straight onto a name-and-password box, which is a lot
+   to ask of somebody who has never heard of it. These three steps say what the
+   room is before asking them to unlock one. */
+.corner-how{
+  list-style:none;margin:22px 0 20px;padding:0;display:grid;gap:14px;
+  counter-reset:cornerstep;
+}
+.corner-how li{
+  display:flex;gap:13px;align-items:flex-start;
+  font-size:.97rem;line-height:1.55;color:var(--plum-mid);
+}
+.corner-how li b{color:var(--plum)}
+.corner-how__num{
+  flex:0 0 28px;width:28px;height:28px;border-radius:50%;
+  display:grid;place-items:center;margin-top:1px;
+  background:linear-gradient(140deg,#7FA8E8,#5C7CD0);
+  color:#fff;font-weight:800;font-size:.85rem;
+  box-shadow:0 4px 12px rgba(92,124,208,.3);
+}
+.corner-for{
+  margin:0 0 18px;padding:14px 17px;border-radius:var(--r);
+  background:rgba(127,168,232,.12);border:1px solid rgba(92,124,208,.2);
+  font-size:.97rem;line-height:1.55;color:var(--plum-mid);
+}
+.corner-for b{color:var(--plum)}

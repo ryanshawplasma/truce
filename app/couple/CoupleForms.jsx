@@ -12,8 +12,11 @@ import { createRoom, joinRoom } from './actions';
  */
 
 const SIDES = [
-  { value: 1, label: 'I am the first one', hint: 'my messages sit on the right' },
-  { value: 2, label: 'I am the second one', hint: 'my messages sit on the right' },
+  /* Both sides see their OWN messages on the right — the number only tells the
+     two of you apart, so the hints have to say that rather than describing an
+     alignment that is identical either way. */
+  { value: 1, label: 'I am the first one', hint: 'pick this if you set the corner up' },
+  { value: 2, label: 'I am the second one', hint: 'pick this if they set it up' },
 ];
 
 export default function CoupleForms() {

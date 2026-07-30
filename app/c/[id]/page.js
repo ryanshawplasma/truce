@@ -5,6 +5,7 @@ import LocalCard from './LocalCard';
 import { getCardById, getReactionsByCardId } from '@/lib/cards';
 import { metadataBase } from '@/lib/site';
 import { SAMPLE_CARD, isSealed } from '@/lib/constants';
+import { getOccasion, fill } from '@/lib/occasions';
 
 /**
  * /c/[id] — the card experience.
@@ -64,9 +65,12 @@ export async function generateMetadata({ params }) {
     );
   }
 
+  /* "For Sam 💌" / "Happy birthday, Sam 🎂" / "A question for Sam 💍" — the
+     wording per occasion lives in lib/occasions.js. */
+  const meta = getOccasion(card.occasion).meta;
   return build(
-    to ? `For ${to} 💌` : 'Someone left you a letter 💌',
-    from ? `Tap to open the envelope ${from} sealed for you 🤍` : 'Tap to open the envelope sealed for you 🤍',
+    to ? fill(meta.title, { name: to }) : meta.titleFallback,
+    from ? fill(meta.description, { name: to, from }) : meta.descriptionFallback,
   );
 }
 

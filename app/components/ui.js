@@ -10,6 +10,20 @@
 
 export const HEART_GLYPHS = ['🤍', '💗', '💕', '💌', '✨', '🩷'];
 
+/* The Sky appearance mixes blues into the drift so the hearts belong to the
+   page they float over. Rose stays in the mix — it is still Truce. */
+const SKY_HEART_GLYPHS = ['💙', '🩵', '🤍', '💗', '💌', '✨'];
+
+/** Whichever set suits the appearance the site is currently wearing. */
+export function heartGlyphs() {
+  try {
+    if (typeof document === 'undefined') return HEART_GLYPHS;
+    return document.documentElement.getAttribute('data-appearance') === 'blush' ? HEART_GLYPHS : SKY_HEART_GLYPHS;
+  } catch {
+    return HEART_GLYPHS;
+  }
+}
+
 /** Respect the user's OS-level "reduce motion" setting. */
 export function prefersReducedMotion() {
   if (typeof window === 'undefined' || !window.matchMedia) return false;
@@ -186,7 +200,10 @@ export function toast(message) {
     toastEl.setAttribute('role', 'status');
     toastEl.style.cssText =
       'position:fixed;left:50%;bottom:26px;transform:translateX(-50%) translateY(12px);' +
-      'background:#3D2137;color:#FFF7F2;padding:13px 22px;border-radius:999px;font-weight:700;font-size:.92rem;' +
+      /* Reads the appearance tokens so the toast belongs to the current skin,
+         including over a card, whose own theme never touches these. */
+      'background:var(--toast-bg,#3D2137);color:var(--toast-ink,#FFF7F2);' +
+      'padding:13px 22px;border-radius:999px;font-weight:700;font-size:.92rem;' +
       'box-shadow:0 14px 34px rgba(61,33,55,.28);z-index:400;opacity:0;transition:opacity .25s ease,transform .25s ease;' +
       'pointer-events:none;max-width:90vw;text-align:center;font-family:inherit;';
     document.body.appendChild(toastEl);

@@ -9,7 +9,7 @@ import { useMaker } from './MakerProvider';
 export default function CtaButton({ className = 'btn btn--primary', children, ...rest }) {
   const { open } = useMaker();
   return (
-    <button type="button" className={className} onClick={open} {...rest}>
+    <button type="button" className={className} onClick={() => open()} {...rest}>
       {children}
     </button>
   );

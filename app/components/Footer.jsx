@@ -1,13 +1,24 @@
 'use client';
 
 import BrandMark from './BrandMark';
+import AppearanceToggle from './AppearanceToggle';
 import { toast } from './ui';
+import { useMaker } from './MakerProvider';
 
 /** Footer. The "coming soon" links show a toast instead of going nowhere. */
 export default function Footer() {
+  const { open } = useMaker();
+
   const soon = (e) => {
     e.preventDefault();
     toast('Coming soon — we are working on it 🤍');
+  };
+
+  /* Birthday and proposal are live now, so these open the maker with the
+     occasion already answered instead of apologising for not existing. */
+  const make = (occasion) => (e) => {
+    e.preventDefault();
+    open(occasion);
   };
 
   return (
@@ -50,21 +61,26 @@ export default function Footer() {
           </div>
 
           <div className="footer__col">
-            <h4>Coming soon</h4>
+            <h4>Occasions</h4>
             <ul>
               <li>
-                <a href="#" onClick={soon}>
-                  Birthday<span className="soon">Soon</span>
+                <a href="#" onClick={make('sorry')}>
+                  Apology 💌
+                </a>
+              </li>
+              <li>
+                <a href="#" onClick={make('birthday')}>
+                  Birthday 🎂
+                </a>
+              </li>
+              <li>
+                <a href="#" onClick={make('proposal')}>
+                  Proposal 💍
                 </a>
               </li>
               <li>
                 <a href="#" onClick={soon}>
                   Anniversary<span className="soon">Soon</span>
-                </a>
-              </li>
-              <li>
-                <a href="#" onClick={soon}>
-                  Proposal<span className="soon">Soon</span>
                 </a>
               </li>
             </ul>
@@ -88,6 +104,9 @@ export default function Footer() {
                 <a href="#" onClick={soon}>
                   Terms
                 </a>
+              </li>
+              <li>
+                <AppearanceToggle variant="link" />
               </li>
             </ul>
           </div>

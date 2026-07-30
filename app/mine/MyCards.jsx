@@ -7,6 +7,7 @@ import { copyText } from '@/app/components/ui';
 import { readMyCards, storageAvailable } from '@/lib/mycards';
 import { relativeTime } from '@/lib/format';
 import { isSealed } from '@/lib/constants';
+import { getOccasion } from '@/lib/occasions';
 
 /**
  * The list of cards this device remembers.
@@ -127,6 +128,7 @@ function MyCardRow({ card, origin }) {
   const isHash = card.kind === 'hash';
   const cardUrl = isHash ? card.url : `${origin}/c/${card.id}`;
   const sealed = isSealed(card.unlockAt);
+  const occasion = getOccasion(card.occasion);
 
   /* Fire-and-forget: the handler never awaits, and copyText always settles. */
   const onCopy = () => {
@@ -141,6 +143,11 @@ function MyCardRow({ card, origin }) {
       <div className="mycard__main">
         <p className="mycard__to">
           To {card.toName || 'someone'}
+          {card.occasion && card.occasion !== 'sorry' ? (
+            <span className="mycard__badge" title={occasion.label}>
+              {occasion.badge} {occasion.label}
+            </span>
+          ) : null}
           {sealed ? (
             <span className="mycard__badge" title="Sealed until its date">
               🕰️ Sealed

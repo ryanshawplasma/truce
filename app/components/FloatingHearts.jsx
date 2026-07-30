@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useRef } from 'react';
-import { HEART_GLYPHS, prefersReducedMotion } from './ui';
+import { heartGlyphs, prefersReducedMotion } from './ui';
 
 /**
  * The hearts drifting up through the hero.
@@ -22,7 +22,10 @@ export default function FloatingHearts({ max = 12, every = 1500 }) {
 
       const el = document.createElement('span');
       el.className = 'fheart';
-      el.textContent = HEART_GLYPHS[Math.floor(Math.random() * HEART_GLYPHS.length)];
+      /* Read the set per spawn, so switching appearance changes the drift
+         within a second or two instead of needing a reload. */
+      const glyphs = heartGlyphs();
+      el.textContent = glyphs[Math.floor(Math.random() * glyphs.length)];
       el.style.left = `${Math.random() * 96}%`;
       el.style.fontSize = `${14 + Math.random() * 18}px`;
       el.style.setProperty('--dx', `${Math.random() * 90 - 45}px`);

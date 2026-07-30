@@ -4,6 +4,7 @@ import BrandMark from '@/app/components/BrandMark';
 import { getAdminStats } from '@/lib/cards';
 import { isSupabaseConfigured } from '@/lib/supabase';
 import { relativeTime, absoluteTime } from '@/lib/format';
+import { OCCASION_IDS, getOccasion } from '@/lib/occasions';
 
 /**
  * /dev — a tiny private dashboard for whoever runs this deployment.
@@ -196,6 +197,23 @@ export default async function DevPage({ searchParams }) {
             ? `${openRate}% of cards have been opened.`
             : 'No cards yet — make one and it will show up here.'}
         </p>
+      </div>
+
+      <div className="panel">
+        <h2>By occasion</h2>
+        <p className="panel__sub">Which kinds of card people are actually making.</p>
+        <div className="stat-grid">
+          {OCCASION_IDS.map((id) => {
+            const occasion = getOccasion(id);
+            return (
+              <Stat
+                key={id}
+                value={(stats.occasionCounts || {})[id]}
+                label={`${occasion.badge} ${occasion.label}`}
+              />
+            );
+          })}
+        </div>
       </div>
 
       <div className="panel">

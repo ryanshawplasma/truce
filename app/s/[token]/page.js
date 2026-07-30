@@ -7,6 +7,7 @@ import { isSupabaseConfigured } from '@/lib/supabase';
 import { siteOrigin } from '@/lib/site';
 import { relativeTime, absoluteTime } from '@/lib/format';
 import { isSealed } from '@/lib/constants';
+import { getOccasion } from '@/lib/occasions';
 
 /**
  * /s/[token] — the sender's private page.
@@ -78,15 +79,22 @@ export default async function SenderPage({ params }) {
   const cardUrl = `${origin}/c/${card.id}`;
 
   const opened = Boolean(card.opened_at);
+  /* One column, three meanings: forgiven on an apology, "they made their wish"
+     on a birthday, "they said yes" on a proposal. The wording comes from the
+     occasion config so the timeline never says the wrong thing. */
   const forgiven = Boolean(card.forgiven_at);
   const sealed = isSealed(card.unlock_at);
+  const occasion = getOccasion(card.occasion);
+  const tl = occasion.timeline;
 
   return (
     <Shell>
       <span className="private-flag">🔒 Private page — only you have this link</span>
 
       <div className="panel">
-        <h2>Your card for {card.to_name}</h2>
+        <h2>
+          Your {occasion.label.toLowerCase()} card for {card.to_name} <span aria-hidden="true">{occasion.badge}</span>
+        </h2>
         <p className="panel__sub">
           Created {relativeTime(card.created_at)} · from {card.from_name} · {card.theme} theme
           {card.unlock_at ? <> · 🕰️ sealed until {absoluteTime(card.unlock_at)}</> : null}
@@ -144,14 +152,14 @@ export default async function SenderPage({ params }) {
           </li>
           <li>
             <span className={`tl__dot${forgiven ? ' is-done' : ''}`} aria-hidden="true">
-              {forgiven ? '🎉' : '…'}
+              {forgiven ? tl.doneEmoji : '…'}
             </span>
             <span className="tl__body">
-              <b>{forgiven ? 'Forgiven 🎉' : 'No answer yet'}</b>
+              <b>{forgiven ? tl.doneTitle : tl.pendingTitle}</b>
               <span>
                 {forgiven
-                  ? `They tapped yes ${relativeTime(card.forgiven_at)} — ${absoluteTime(card.forgiven_at)}`
-                  : 'The moment they tap “yes”, it shows up here.'}
+                  ? `${tl.doneHint} ${relativeTime(card.forgiven_at)} — ${absoluteTime(card.forgiven_at)}`
+                  : tl.pendingHint}
               </span>
             </span>
           </li>

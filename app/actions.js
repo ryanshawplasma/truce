@@ -12,6 +12,9 @@ import { tidyAndTruncate } from '@/lib/truncate';
 import {
   LIMITS, THEME_IDS, STYLE_IDS, STICKER_IDS, MAX_STICKERS, isValidReaction, normaliseUnlockAt, isSealed,
 } from '@/lib/constants';
+import {
+  OCCASION_IDS, DEFAULT_OCCASION, allowsRecipient, getOccasion, occasionSteps,
+} from '@/lib/occasions';
 
 /**
  * Server actions. Everything the browser sends is untrusted: every field is
@@ -102,6 +105,17 @@ function cleanStickers(value) {
 function validateCardInput(input) {
   if (!input || typeof input !== 'object') return { error: 'Nothing to save.' };
 
+  /* Allowlist first: everything below is interpreted through the occasion, so
+     an unknown one must never get as far as being stored. */
+  const occasion = OCCASION_IDS.includes(input.occasion) ? input.occasion : DEFAULT_OCCASION;
+
+  /* The recipient is not stored — it only ever picked which messages to show —
+     but a proposal addressed to "Dad" means the browser sent us something the
+     maker cannot produce, so we decline rather than quietly go along with it. */
+  if (input.recipient && !allowsRecipient(occasion, input.recipient)) {
+    return { error: 'That is not someone this kind of card can be sent to.' };
+  }
+
   const to_name = str(input.to_name, LIMITS.name);
   const from_name = str(input.from_name, LIMITS.name);
   const message = str(input.message, LIMITS.message);
@@ -110,8 +124,16 @@ function validateCardInput(input) {
   if (!from_name) return { error: 'Please tell us who it is from.' };
   if (!message) return { error: 'Your card needs a message.' };
 
+  /* Occasions that skip the severity question store the config default rather
+     than whatever the client happened to send. */
+  const asks = occasionSteps(occasion).includes('severity');
+  const fallback = getOccasion(occasion).defaultSeverity || 2;
   const severityNumber = Number(input.severity);
-  const severity = severityNumber === 1 || severityNumber === 2 || severityNumber === 3 ? severityNumber : 2;
+  const severity = asks && [1, 2, 3].includes(severityNumber) ? severityNumber : fallback;
+
+  /* Same rule for the question an occasion never asks: a birthday card has no
+     "what happened", so it cannot arrive with one. */
+  const reason = occasionSteps(occasion).includes('reason') ? str(input.reason, LIMITS.reason) : '';
 
   /* Time-capsule: never trust the browser's clock or its arithmetic. */
   const unlock = normaliseUnlockAt(input.unlock_at);
@@ -119,11 +141,11 @@ function validateCardInput(input) {
 
   return {
     card: {
-      occasion: 'sorry', // only occasion for now — see lib/occasions.js
+      occasion, // one of OCCASION_IDS — see lib/occasions.js
       to_name,
       from_name,
       message,
-      reason: str(input.reason, LIMITS.reason),
+      reason,
       promise: str(input.promise, LIMITS.promise),
       memory: str(input.memory, LIMITS.memory),
       style: oneOf(input.style, STYLE_IDS, 'sweet'),

@@ -25,6 +25,11 @@ export function useMaker() {
 export default function MakerProvider({ children, dbEnabled = false }) {
   const [isOpen, setIsOpen] = useState(false);
 
+  /* Set when the maker is opened from an occasion shortcut ("Birthday 🎂"
+     under the hero). The token changes on every click so the wizard can tell a
+     fresh request apart from a re-render and start a clean card. */
+  const [start, setStart] = useState(null);
+
   /* Once the maker has been opened it stays MOUNTED, just hidden. Unmounting it
      would throw away every answer, which is what made pressing Back so painful:
      nine questions gone, no warning, no way back. Mounted-but-hidden means
@@ -34,7 +39,14 @@ export default function MakerProvider({ children, dbEnabled = false }) {
   /* Whether we pushed a history entry for the current opening. */
   const pushedRef = useRef(false);
 
-  const open = useCallback(() => {
+  /**
+   * `open()` — carry on where they left off.
+   * `open('birthday')` — start a birthday card, past the occasion question.
+   */
+  const open = useCallback((occasion) => {
+    if (typeof occasion === 'string' && occasion) {
+      setStart({ occasion, token: Date.now() });
+    }
     setHasOpened(true);
     setIsOpen(true);
     /**
@@ -90,7 +102,7 @@ export default function MakerProvider({ children, dbEnabled = false }) {
       <div id="app-landing" className={isOpen ? 'hidden' : undefined}>
         {children}
       </div>
-      {hasOpened ? <Wizard onClose={close} dbEnabled={dbEnabled} open={isOpen} /> : null}
+      {hasOpened ? <Wizard onClose={close} dbEnabled={dbEnabled} open={isOpen} start={start} /> : null}
     </MakerContext.Provider>
   );
 }

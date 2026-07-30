@@ -1,12 +1,16 @@
 # Truce 🤍
 
-**The sweetest way to say sorry.**
+**The sweetest way to say sorry — and, now, to say a few other things too.**
 
-Truce turns an apology into something the other person actually wants to open: a
+Truce turns a card into something the other person actually wants to open: a
 sealed envelope, a hand-written message that types itself out, a promise, a
-memory, and a "Do you forgive me?" button whose *No* option is not entirely
-cooperative. You get a private link to send, and a second private link that
-tells you when it was opened and what they sent back.
+memory, and a moment at the end that depends on the occasion — a "Do you forgive
+me?" button whose *No* option is not entirely cooperative, a birthday cake with
+candles to blow out, or one very large question. You get a private link to send,
+and a second private link that tells you when it was opened and what they sent
+back.
+
+Three occasions so far: **apology 💌**, **birthday 🎂** and **proposal 💍**.
 
 Free while in beta — no accounts, no payments, no card details.
 
@@ -16,13 +20,27 @@ Free while in beta — no accounts, no payments, no card details.
 
 - **A landing page** — the full Truce marketing site: hero with drifting hearts,
   how-it-works, features, a peek at the message library, FAQ.
-- **A card maker** — nine short questions (who, names, how bad, what happened,
-  style, message, promise, theme, preview), then one button to create the card.
-- **56 hand-written messages** in four styles (sweet, funny, poetic, from the
-  heart), filtered by who you're writing to. Every word stays editable.
-- **Six themes** — Blush Rose, Sky Blue, Peach Sunset, Lavender Haze, Moonlight
-  and Midnight Plum. Each one is a full set of CSS custom properties, right down
-  to the colour of the paper and the wax seal.
+- **A card maker** — it opens by asking what the occasion is, and the occasion
+  decides the rest: an apology asks how big the oops was and what happened, a
+  birthday asks how big it should feel and skips straight past "what happened",
+  and a proposal skips both. Then style, message, promise, theme, stickers,
+  preview, and one button to create the card.
+- **Three recipient moments** — the forgive button on an apology, a cake with
+  `severity + 2` candles to blow out on a birthday, and "Will you be mine? 💍"
+  (with the same dodging *No*) on a proposal.
+- **96 hand-written messages** in four styles (sweet, funny, poetic, from the
+  heart) — 56 apologies, 24 birthday, 16 proposal — filtered by occasion and by
+  who you're writing to. Every word stays editable.
+- **Two site appearances** — **Sky 💙** (the default) and **Blush 🌸** (the
+  original warm cream). The switch is in the nav, the mobile menu and the
+  footer, it is remembered by the visitor's browser, and it is applied before
+  the page paints so there is never a flash of the wrong colours.
+- **Six card themes** — Blush Rose, Sky Blue, Peach Sunset, Lavender Haze,
+  Moonlight and Midnight Plum. Each one is a full set of CSS custom properties,
+  right down to the colour of the paper and the wax seal. (A *theme* belongs to
+  one card and its sender picks it; an *appearance* is the whole site and each
+  visitor picks their own. The two never fight: a card always looks the way its
+  sender intended.)
 - **Time-capsule letters** — optionally seal a card until a date and time. Until
   that moment the recipient sees a sealed envelope and a live countdown, and the
   server sends them *no* message, promise, memory or stickers at all — the lock
@@ -241,17 +259,21 @@ app/
   page.js                  landing page (server) + the maker
   layout.js                fonts, metadata, icon sprite
   actions.js               all server actions (create, react, forgive, delete)
-  globals.css              the entire Truce design system
-  data/messages.js         the 56-message library
+  globals.css              the entire Truce design system, incl. both appearances
+  data/messages.js         the 56 apology messages
+  data/occasion-messages.js  the birthday + proposal messages
+  data/library.js          all three libraries, and the occasion-aware filter
   components/              nav, hero pieces, wizard, card experience, helpers
+  components/AppearanceToggle.jsx  the Sky 💙 / Blush 🌸 switch
   c/[id]/                  the card experience + its social-share image
   s/[token]/               the sender's private page
 lib/
+  appearance.js            the site skin: storage, defaults, pre-paint script
   supabase.js              server-only database client
   cards.js                 read helpers
   codec.js                 the no-database link encoder
   constants.js             recipients, styles, themes, limits, sample card
-  occasions.js             per-occasion copy (see below)
+  occasions.js             the occasion config — copy, steps, moments (see below)
   format.js                relative/absolute time
 supabase/schema.sql        paste-into-Supabase database setup
 ```
@@ -265,7 +287,30 @@ A few deliberate choices:
 - **Everything the visitor types is re-validated on the server** in
   `app/actions.js` — lengths, allowed themes/styles, and the emoji allowlist.
 - **React escapes all text**, so a name like `<script>` is just an odd name.
-  There is no `dangerouslySetInnerHTML` anywhere in this project.
+  Nothing anybody types ever reaches `dangerouslySetInnerHTML`. There is exactly
+  one use of it in the whole project — the appearance script in `app/layout.js`
+  — and it inlines a fixed string written by us (`APPEARANCE_BOOT_SCRIPT` in
+  `lib/appearance.js`) with no user input anywhere near it. It has to be inline
+  because it runs while the browser is still parsing the HTML, which is the only
+  moment early enough to avoid a flash of the wrong palette.
+
+### Appearance: the site skin
+
+`html[data-appearance="sky"]` (or `"blush"`) is the switch everything hangs off.
+`app/globals.css` defines one block of semantic tokens per appearance — `--page`,
+`--ink`, `--accent`, `--footer-bg` and friends — and the rest of the stylesheet
+only ever refers to those names, so adding a third skin means copying one block
+and changing about thirty values. Every text colour is chosen against the
+background it actually sits on and clears WCAG AA (4.5:1) in both appearances.
+
+Two things deliberately stay rose in every appearance: the logo and the primary
+buttons. That pop of Truce rose is the brand, and it looks its best on sky.
+
+The choice lives in `localStorage` under `truce.appearance`. As with "My cards",
+every read and write is wrapped — if storage is blocked the site simply stays on
+the default. `qa/appearance.js` is the regression suite: it checks the toggle,
+persistence, axe in both skins, and screencasts a throttled page load frame by
+frame to prove there is no flash.
 
 ### Device memory and "My cards"
 
@@ -293,11 +338,23 @@ Privacy and robustness, because both matter here:
 
 ### Adding another occasion later
 
-`lib/occasions.js` holds every string that would change for a birthday or an
-anniversary card — the hero headline, the envelope subtitles, the wizard
-questions, the sign-off. There's a commented `birthday` example in that file
-showing exactly what a new entry looks like. The database already has an
-`occasion` column, so no migration is needed.
+`lib/occasions.js` is the only file that knows one occasion from another. Each
+entry holds:
+
+- which **questions** to ask, and in what order (`steps`)
+- which **recipients** to offer (`recipientIds`)
+- the **envelope** headline and subtitles, the sign-off, the share preview copy
+- what the **promise** field is called and how it reads back (a birthday calls
+  it a wish and stores it in the same column)
+- which **moment** the recipient gets: `forgive`, `candles` or `question`
+- the **meter** labels, the reply-back strip, and the sender's timeline wording
+
+To add "anniversary", copy the `birthday` entry, add a message library to
+`app/data/library.js`, and add the id to `OCCASION_IDS` and the allowlist in
+`app/actions.js`. No new UI code is needed unless the occasion wants a brand new
+recipient moment — that is the one switch, in
+`app/components/CardExperience.jsx`. The database already has an `occasion`
+column, so no migration is needed.
 
 ---
 
@@ -371,8 +428,9 @@ a database-side limit — a deliberate next step, listed in the roadmap below.
 
 - **Payments** — Razorpay (India) and Stripe (everywhere else) for paid tiers;
   the maker's final step is the natural place to put checkout.
-- **More occasions** — birthday, anniversary, congratulations, proposal; the
-  data model and copy layer are already set up for it.
+- **More occasions** — anniversary, congratulations, new baby, thank you; the
+  data model and copy layer take a new one in a single config entry (see
+  "Adding another occasion later").
 - **Photo uploads** — one photo inside the envelope, via Supabase Storage.
 - **Our corner v2** — typing indicators, read receipts, and a way to turn a
   conversation into a card without leaving the room.

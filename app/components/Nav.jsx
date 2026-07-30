@@ -5,6 +5,7 @@ import Link from 'next/link';
 import BrandMark from './BrandMark';
 import CtaButton from './CtaButton';
 import BetaChip from './BetaChip';
+import AppearanceToggle from './AppearanceToggle';
 
 /* In-page anchors, plus one real route: `route: true` entries use next/link so
    they navigate instead of scrolling. */
@@ -59,6 +60,8 @@ export default function Nav() {
           )}
         </nav>
 
+        <AppearanceToggle variant="pill" />
+
         <CtaButton className="btn btn--primary btn--sm nav__cta">Make your card</CtaButton>
 
         <button
@@ -87,6 +90,7 @@ export default function Nav() {
           ),
         )}
         <CtaButton className="btn btn--primary btn--wide">Make your card</CtaButton>
+        <AppearanceToggle variant="row" />
       </div>
     </header>
   );

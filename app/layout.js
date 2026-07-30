@@ -1,5 +1,6 @@
 import { fraunces, nunito } from './fonts';
 import IconSprite from './components/IconSprite';
+import { APPEARANCE_BOOT_SCRIPT, DEFAULT_APPEARANCE, appearanceMeta } from '@/lib/appearance';
 import './globals.css';
 
 /* metadataBase is what relative OG/Twitter URLs are resolved against. Falling
@@ -33,7 +34,9 @@ export const metadata = {
 };
 
 export const viewport = {
-  themeColor: '#FFF7F2',
+  /* The default appearance's page colour. The pre-paint script below rewrites
+     it for visitors who chose the other one. */
+  themeColor: appearanceMeta(DEFAULT_APPEARANCE).themeColor,
   colorScheme: 'light',
   width: 'device-width',
   initialScale: 1,
@@ -44,7 +47,21 @@ export default function RootLayout({ children }) {
   return (
     /* data-scroll-behavior tells Next 16 to keep route changes snappy even
        though globals.css sets `scroll-behavior: smooth` for in-page anchors. */
-    <html lang="en" data-scroll-behavior="smooth" className={`${fraunces.variable} ${nunito.variable}`}>
+    <html
+      lang="en"
+      data-scroll-behavior="smooth"
+      /* The server cannot know which skin this visitor picked, so it renders
+         the default and the script below corrects it while the HTML is still
+         being parsed — before the first paint, and before React hydrates.
+         suppressHydrationWarning tells React the DOM is right, not the payload.
+         See node_modules/next/dist/docs/01-app/02-guides/preventing-flash-before-hydration.md */
+      data-appearance={DEFAULT_APPEARANCE}
+      suppressHydrationWarning
+      className={`${fraunces.variable} ${nunito.variable}`}
+    >
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: APPEARANCE_BOOT_SCRIPT }} />
+      </head>
       <body>
         <IconSprite />
         {children}

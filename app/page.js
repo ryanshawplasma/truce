@@ -5,7 +5,9 @@ import Footer from './components/Footer';
 import CtaButton from './components/CtaButton';
 import FloatingHearts from './components/FloatingHearts';
 import MessageTeaser from './components/MessageTeaser';
+import OccasionRow from './components/OccasionRow';
 import MESSAGES from './data/messages';
+import { LIBRARY_TOTAL, libraryCount } from './data/library';
 import { Sticker } from './components/stickers';
 import { STICKER_IDS, STICKER_PACKS } from '@/lib/constants';
 import { getOccasion } from '@/lib/occasions';
@@ -57,6 +59,8 @@ export default function HomePage() {
                   See a sample card
                 </Link>
               </div>
+
+              <OccasionRow />
 
               <p className="hero__micro">No app to install · Ready in about 3 minutes · Works on any phone</p>
             </div>
@@ -160,10 +164,11 @@ export default function HomePage() {
                 <div className="feature__icon" aria-hidden="true">
                   ✍️
                 </div>
-                <h3>{MESSAGES.length} hand-written messages</h3>
+                <h3>{LIBRARY_TOTAL} hand-written messages</h3>
                 <p>
-                  Written by actual humans who have also messed up. Filtered to your situation, and every word stays
-                  editable.
+                  {MESSAGES.length} for apologies, {libraryCount('birthday')} for birthdays and{' '}
+                  {libraryCount('proposal')} for the big question — written by actual humans who have also messed up.
+                  Filtered to your situation, and every word stays editable.
                 </p>
               </article>
 
@@ -264,8 +269,8 @@ export default function HomePage() {
                 <div className="beta-card">
                   <h3>Everything unlocked</h3>
                   <p>
-                    All {MESSAGES.length} messages, all six themes, sealed time-capsule letters, the
-                    promise, the memory line and the forgive button.
+                    All three occasions, all {LIBRARY_TOTAL} messages, all six themes, sealed time-capsule
+                    letters, the promise, the memory line and the forgive button.
                   </p>
                 </div>
                 <div className="beta-card">
@@ -297,10 +302,10 @@ export default function HomePage() {
                 </span>
                 <h2>Somewhere to talk when everywhere else is closed.</h2>
                 <p>
-                  Sometimes the apology is the easy part and the hard part is having anywhere to say
-                  it. Our corner is a tiny private room for two, opened with a name and a password
-                  you both agree on — no accounts, no phone numbers, nothing to install. It stays
-                  signed in for 30 days, so it is there at 2am.
+                  Our corner is a tiny private room for two, opened with a name and a password you
+                  both agree on — no accounts, no phone numbers, nothing to install. It is for the
+                  moments one of you is blocked everywhere else and still has something to say. It
+                  stays signed in for 30 days, so it is there at 2am.
                 </p>
                 <div className="corner-promo__actions">
                   <Link className="btn btn--primary btn--lg" href="/couple">
@@ -407,6 +412,18 @@ export default function HomePage() {
 
             <div className="faq">
               <details>
+                <summary>Is Truce only for apologies?</summary>
+                <div className="faq__a">
+                  <p>
+                    Not any more. Truce started with the hardest card to write — sorry — and now makes birthday
+                    cards 🎂 and proposals 💍 too. Each one asks its own questions and ends its own way: an apology
+                    has the forgive button, a birthday has candles to blow out, and a proposal has one enormous
+                    question. Anniversary is next.
+                  </p>
+                </div>
+              </details>
+
+              <details>
                 <summary>How does delivery work?</summary>
                 <div className="faq__a">
                   <p>
@@ -476,6 +493,7 @@ export default function HomePage() {
                   See a sample first
                 </Link>
               </div>
+              <OccasionRow />
             </div>
           </div>
         </section>

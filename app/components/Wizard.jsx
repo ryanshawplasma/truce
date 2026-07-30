@@ -1,15 +1,19 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import MESSAGES from '../data/messages';
+import { filterMessages } from '../data/library';
 import { createCard, getCapabilities } from '../actions';
 import {
-  RECIPIENTS, SEVERITIES, REASONS, STYLES, STYLE_LABEL, THEMES, LIMITS, FEELING_EMOJI, MAX_STICKERS,
-  softenReason, suggestedStickers, stickerLabel, normaliseUnlockAt, UNLOCK_MIN_MS, UNLOCK_MAX_MS,
+  REASONS, STYLES, STYLE_LABEL, THEMES, LIMITS, FEELING_EMOJI, MAX_STICKERS,
+  softenReason, stickerLabel, normaliseUnlockAt, UNLOCK_MIN_MS, UNLOCK_MAX_MS,
 } from '@/lib/constants';
 import { PACKS, Sticker } from './stickers';
 import PackTabs from './PackTabs';
-import { getOccasion, envelopeSubtitle } from '@/lib/occasions';
+import {
+  DEFAULT_OCCASION, OCCASION_CHOICES, getOccasion, envelopeSubtitle, envelopeTitle,
+  occasionSteps, occasionRecipients, occasionSeverities, occasionSuggestedStickers,
+  stripPromiseLead, promiseText, allowsRecipient, safeOccasion,
+} from '@/lib/occasions';
 import { rememberCard } from '@/lib/mycards';
 import { truncate } from '@/lib/truncate';
 import { CUTENESS_MAX, cutenessScore, cutenessLabel, cutenessHint } from '@/lib/cuteness';
@@ -21,15 +25,23 @@ import BetaChip from './BetaChip';
 /**
  * The card maker.
  *
- * Nine questions, then a preview, then a success screen with the real link.
+ * The occasion comes first, and the occasion decides the rest: which questions
+ * get asked, in what order, and what they are called. Everything below renders
+ * a list of step KEYS supplied by lib/occasions.js rather than a fixed run of
+ * numbered cases — which is how a birthday skips "what happened" and a proposal
+ * skips both that and the severity question without a single `if`.
+ *
  * All answers live in one `data` object in memory — nothing is stored in the
  * browser, and nothing reaches the server until "Create your card" is pressed.
  */
 
-const OCCASION_ID = 'sorry';
-const TOTAL_STEPS = 10; // the success screen is not counted
+/* How long we wait for "Create your card" before offering a retry. A server
+   action that never settles used to leave the button spinning forever. */
+const CREATE_TIMEOUT_MS = 12000;
 
 const EMPTY = {
+  /* '' until they have chosen — the maker opens on the occasion question. */
+  occasion: '',
   recipient: '',
   to_name: '',
   from_name: '',
@@ -49,9 +61,10 @@ const EMPTY = {
   unlockLocal: '',
 };
 
-/* How long we wait for "Create your card" before offering a retry. A server
-   action that never settles used to leave the button spinning forever. */
-const CREATE_TIMEOUT_MS = 12000;
+const STEP_WORDS = [
+  'one', 'two', 'three', 'four', 'five', 'six',
+  'seven', 'eight', 'nine', 'ten', 'eleven', 'twelve',
+];
 
 /* datetime-local speaks local wall-clock time, so both ends of the range have
    to be formatted in the visitor's own timezone rather than as ISO/UTC. */
@@ -84,22 +97,7 @@ function localToIso(value) {
 
 const tidy = (value) => String(value ?? '').replace(/[ \t]+/g, ' ').trim();
 
-function recipientTag(recipientId) {
-  const found = RECIPIENTS.find((r) => r.id === recipientId);
-  return found ? found.tag : 'any';
-}
-
-/** Messages matching the chosen style AND the recipient (or tagged "any"). */
-function filterMessages(style, recipientId) {
-  const tag = recipientTag(recipientId);
-  return MESSAGES.filter((m) => {
-    if (m.s !== style) return false;
-    const who = m.who || ['any'];
-    return who.includes(tag) || who.includes('any');
-  });
-}
-
-/** The combined "what happened" line shown as `Re: …` on the card.
+/** The combined "what happened" line shown as an aside on the card.
  *
  *  truncate() rather than .slice(): five preset reasons plus a free-text note
  *  easily runs past the limit, and cutting there can land in the middle of an
@@ -114,13 +112,17 @@ function buildReason(data) {
 
 /** Wizard answers -> the card shape used everywhere else. */
 function toCard(data) {
+  const occasion = safeOccasion(data.occasion);
+  const asks = occasionSteps(occasion);
   return {
-    occasion: OCCASION_ID,
+    occasion,
+    /* Sent so the server can check it against the occasion, never stored. */
+    recipient: data.recipient,
     to_name: data.to_name,
     from_name: data.from_name,
-    severity: data.severity,
+    severity: asks.includes('severity') ? data.severity : getOccasion(occasion).defaultSeverity || 2,
     message: data.message,
-    reason: buildReason(data),
+    reason: asks.includes('reason') ? buildReason(data) : '',
     promise: data.promise,
     memory: data.memory,
     style: data.style || 'sweet',
@@ -134,7 +136,8 @@ function toCard(data) {
 /* ------------------------------------------------------------- cuteness */
 
 /* The scoring itself lives in lib/cuteness.js, because the card the recipient
-   opens shows the same meter (and lets them poke it). */
+   opens shows the same meter (and lets them poke it). A wish counts exactly
+   like a promise — it is the same field wearing a party hat. */
 
 function CutenessMeter({ data, showHint = true }) {
   const score = cutenessScore(data);
@@ -177,7 +180,9 @@ function MiniCard({ card }) {
         <div className="mini__seal" style={{ background: 'var(--t-seal)', color: '#fff' }} aria-hidden="true">
           ♥
         </div>
-        <div style={{ fontFamily: 'var(--font-display)', fontSize: '1.1rem' }}>For {card.to_name || 'them'}</div>
+        <div style={{ fontFamily: 'var(--font-display)', fontSize: '1.1rem' }}>
+          {envelopeTitle(card.occasion, card.to_name || 'them')}
+        </div>
         <div style={{ fontSize: '.82rem', opacity: 0.75 }}>{envelopeSubtitle(card.occasion, card.severity)}</div>
       </div>
 
@@ -191,8 +196,9 @@ function MiniCard({ card }) {
 
         {card.promise ? (
           <div className="mini__extra" style={{ background: 'var(--t-accent-soft)', color: 'var(--t-paper-ink)' }}>
-            <b style={{ color: 'var(--t-accent)' }}>My promise to you:</b>
-            <br />I promise to {card.promise}
+            <b style={{ color: 'var(--t-accent)' }}>{occasion.promise.boxTitle}:</b>
+            <br />
+            {promiseText(card.occasion, card.promise)}
           </div>
         ) : null}
 
@@ -226,10 +232,7 @@ function LinkRow({ label, url, help, tone = 'public' }) {
    Wizard
    ========================================================================== */
 
-export default function Wizard({ onClose, dbEnabled = false, open = true }) {
-  const occasion = getOccasion(OCCASION_ID);
-  const copy = occasion.wizard;
-
+export default function Wizard({ onClose, dbEnabled = false, open = true, start = null }) {
   const [data, setData] = useState(EMPTY);
   const [step, setStep] = useState(0);
   const [direction, setDirection] = useState(1);
@@ -246,8 +249,21 @@ export default function Wizard({ onClose, dbEnabled = false, open = true }) {
 
   const set = useCallback((patch) => setData((d) => ({ ...d, ...patch })), []);
 
-  const done = step >= TOTAL_STEPS;
-  const shown = Math.min(step + 1, TOTAL_STEPS);
+  /* The occasion drives everything. Until one is chosen we lay the maker out
+     with the default so the progress bar has something honest to show. */
+  const occasionId = data.occasion || DEFAULT_OCCASION;
+  const occasion = getOccasion(occasionId);
+  const copy = occasion.wizard;
+
+  /* Step ZERO is always the occasion question; the rest comes from the config.
+     Keeping the picker in the list (rather than before it) means Back from the
+     first question walks to it instead of closing the maker. */
+  const steps = useMemo(() => ['occasion', ...occasionSteps(occasionId)], [occasionId]);
+  const totalSteps = steps.length;
+  const key = steps[step] || 'done';
+
+  const done = step >= totalSteps;
+  const shown = Math.min(step + 1, totalSteps);
 
   const goTo = useCallback((next, dir) => {
     setDirection(dir);
@@ -255,7 +271,7 @@ export default function Wizard({ onClose, dbEnabled = false, open = true }) {
     setStep(next);
   }, []);
 
-  const next = useCallback(() => goTo(Math.min(step + 1, TOTAL_STEPS), 1), [goTo, step]);
+  const next = useCallback(() => goTo(Math.min(step + 1, totalSteps), 1), [goTo, step, totalSteps]);
   const back = useCallback(() => {
     if (step === 0) {
       onClose();
@@ -263,6 +279,25 @@ export default function Wizard({ onClose, dbEnabled = false, open = true }) {
     }
     goTo(step - 1, -1);
   }, [goTo, onClose, step]);
+
+  /**
+   * Opened from an occasion shortcut ("Birthday 🎂" under the hero).
+   *
+   * `start` carries a token that changes on every such click, so choosing a
+   * different occasion always starts a fresh card rather than dropping them
+   * halfway through the last one with the wrong questions around them.
+   */
+  const startedRef = useRef(null);
+  useEffect(() => {
+    if (!start || !start.occasion) return;
+    if (startedRef.current === start.token) return;
+    startedRef.current = start.token;
+    setData({ ...EMPTY, occasion: safeOccasion(start.occasion) });
+    setResult(null);
+    setErrors({});
+    setDirection(1);
+    setStep(1); // straight past the picker — they already answered it
+  }, [start]);
 
   useEffect(() => {
     let alive = true;
@@ -343,7 +378,10 @@ export default function Wizard({ onClose, dbEnabled = false, open = true }) {
     return () => window.removeEventListener('beforeunload', onBeforeUnload);
   }, [open, result, hasAnswers]);
 
-  const messages = useMemo(() => filterMessages(data.style, data.recipient), [data.style, data.recipient]);
+  const messages = useMemo(
+    () => filterMessages(occasionId, data.style, data.recipient),
+    [occasionId, data.style, data.recipient],
+  );
   const card = useMemo(() => toCard(data), [data]);
 
   /* Bounds for the seal-date picker, in the visitor's own clock. Computed once
@@ -353,6 +391,36 @@ export default function Wizard({ onClose, dbEnabled = false, open = true }) {
       min: toLocalInputValue(Date.now() + UNLOCK_MIN_MS),
       max: toLocalInputValue(Date.now() + UNLOCK_MAX_MS),
     }),
+    [],
+  );
+
+  /**
+   * Choosing (or changing) the occasion.
+   *
+   * The libraries are per-occasion, so a message picked for an apology has no
+   * business surviving into a birthday card. The recipient survives only if the
+   * new occasion offers them — you cannot propose to your dad.
+   */
+  const chooseOccasion = useCallback(
+    (id) => {
+      const nextId = safeOccasion(id);
+      setData((d) => {
+        if (d.occasion === nextId) return d;
+        return {
+          ...d,
+          occasion: nextId,
+          recipient: allowsRecipient(nextId, d.recipient) ? d.recipient : '',
+          messageIndex: -1,
+          message: '',
+          severity: occasionSteps(nextId).includes('severity')
+            ? d.severity
+            : getOccasion(nextId).defaultSeverity || 2,
+          /* "What happened" belongs to apologies only. */
+          reasons: occasionSteps(nextId).includes('reason') ? d.reasons : [],
+          reasonText: occasionSteps(nextId).includes('reason') ? d.reasonText : '',
+        };
+      });
+    },
     [],
   );
 
@@ -459,6 +527,7 @@ export default function Wizard({ onClose, dbEnabled = false, open = true }) {
           id: response.id,
           editToken: response.editToken,
           toName: card.to_name,
+          occasion: card.occasion,
           createdAt: new Date().toISOString(),
           unlockAt: response.unlockAt || null,
         });
@@ -471,11 +540,12 @@ export default function Wizard({ onClose, dbEnabled = false, open = true }) {
           kind: 'hash',
           url: `${origin}/c/local#c=${response.payload}`,
           toName: card.to_name,
+          occasion: card.occasion,
           createdAt: new Date().toISOString(),
         });
       }
 
-      goTo(TOTAL_STEPS, 1);
+      goTo(totalSteps, 1);
       setTimeout(() => celebrate(), 260);
     } catch {
       window.clearTimeout(timer);
@@ -520,35 +590,43 @@ export default function Wizard({ onClose, dbEnabled = false, open = true }) {
 
   /* ------------------------------------------------------------- render */
 
-  const stepTitles = [
-    copy.recipientQ,
-    'The important names',
-    copy.severityQ,
-    copy.reasonQ,
-    copy.styleQ,
-    copy.messageQ,
-    copy.promiseQ,
-    copy.themeQ,
-    'Add stickers 🧸',
-    'Here it is',
-  ];
+  const kicker = key === 'preview' ? 'Almost there' : `Step ${STEP_WORDS[step] || step + 1}`;
+
+  const stepTitles = {
+    occasion: "What's the occasion?",
+    recipient: copy.recipientQ,
+    names: 'The important names',
+    severity: copy.severityQ,
+    reason: copy.reasonQ,
+    style: copy.styleQ,
+    message: copy.messageQ,
+    promise: copy.promiseQ,
+    theme: copy.themeQ,
+    stickers: 'Add stickers 🧸',
+    preview: 'Here it is',
+  };
 
   function renderStep() {
-    switch (step) {
-      /* 1 — who --------------------------------------------------------- */
-      case 0:
+    switch (key) {
+      /* ---- the occasion --------------------------------------------- */
+      case 'occasion':
         return (
           <>
-            <Head kicker="Step one" title={copy.recipientQ} sub={copy.recipientSub} />
-            <div className="opts" role="radiogroup" aria-label="Recipient">
-              {RECIPIENTS.map((r) => (
+            <Head
+              kicker={kicker}
+              title="What's the occasion?"
+              sub="Three kinds of card so far. They each ask slightly different questions."
+            />
+            <div className="opts opts--3" role="radiogroup" aria-label="Occasion">
+              {OCCASION_CHOICES.map((o) => (
                 <Opt
-                  key={r.id}
-                  emoji={r.emoji}
-                  label={r.label}
-                  on={data.recipient === r.id}
+                  key={o.id}
+                  emoji={o.emoji}
+                  label={o.label}
+                  desc={o.desc}
+                  on={data.occasion === o.id}
                   onClick={() => {
-                    set({ recipient: r.id });
+                    chooseOccasion(o.id);
                     window.setTimeout(next, 260);
                   }}
                 />
@@ -557,11 +635,34 @@ export default function Wizard({ onClose, dbEnabled = false, open = true }) {
           </>
         );
 
-      /* 2 — names ------------------------------------------------------- */
-      case 1:
+      /* ---- who ------------------------------------------------------- */
+      case 'recipient':
         return (
           <>
-            <Head kicker="Step two" title="The important names" sub="They go on the envelope and the signature." />
+            <Head kicker={kicker} title={copy.recipientQ} sub={copy.recipientSub} />
+            <div className="opts" role="radiogroup" aria-label="Recipient">
+              {occasionRecipients(occasionId).map((r) => (
+                <Opt
+                  key={r.id}
+                  emoji={r.emoji}
+                  label={r.label}
+                  on={data.recipient === r.id}
+                  onClick={() => {
+                    /* A different recipient can mean a different shortlist. */
+                    set(r.id === data.recipient ? { recipient: r.id } : { recipient: r.id, messageIndex: -1 });
+                    window.setTimeout(next, 260);
+                  }}
+                />
+              ))}
+            </div>
+          </>
+        );
+
+      /* ---- names ----------------------------------------------------- */
+      case 'names':
+        return (
+          <>
+            <Head kicker={kicker} title="The important names" sub="They go on the envelope and the signature." />
             <div className="field">
               <label htmlFor="fTo">Their name</label>
               <input
@@ -597,13 +698,13 @@ export default function Wizard({ onClose, dbEnabled = false, open = true }) {
           </>
         );
 
-      /* 3 — severity ---------------------------------------------------- */
-      case 2:
+      /* ---- severity / how big it should feel ------------------------- */
+      case 'severity':
         return (
           <>
-            <Head kicker="Step three" title={copy.severityQ} sub={copy.severitySub} />
-            <div className="opts opts--3" role="radiogroup" aria-label="Severity">
-              {SEVERITIES.map((s) => (
+            <Head kicker={kicker} title={copy.severityQ} sub={copy.severitySub} />
+            <div className="opts opts--3" role="radiogroup" aria-label={copy.severityQ}>
+              {occasionSeverities(occasionId).map((s) => (
                 <Opt
                   key={s.v}
                   emoji={s.emoji}
@@ -620,11 +721,11 @@ export default function Wizard({ onClose, dbEnabled = false, open = true }) {
           </>
         );
 
-      /* 4 — what happened (optional) ------------------------------------ */
-      case 3:
+      /* ---- what happened (apologies only, optional) ------------------ */
+      case 'reason':
         return (
           <>
-            <Head kicker="Step four" title={copy.reasonQ} sub={copy.reasonSub} />
+            <Head kicker={kicker} title={copy.reasonQ} sub={copy.reasonSub} />
             <div className="chips" role="group" aria-label="Quick reasons">
               {REASONS.map((r) => {
                 const on = data.reasons.includes(r);
@@ -680,12 +781,12 @@ export default function Wizard({ onClose, dbEnabled = false, open = true }) {
           </>
         );
 
-      /* 5 — style ------------------------------------------------------- */
-      case 4:
+      /* ---- style ----------------------------------------------------- */
+      case 'style':
         return (
           <>
-            <Head kicker="Step five" title={copy.styleQ} sub={copy.styleSub} />
-            <div className="opts" role="radiogroup" aria-label="Apology style">
+            <Head kicker={kicker} title={copy.styleQ} sub={copy.styleSub} />
+            <div className="opts" role="radiogroup" aria-label={copy.styleQ}>
               {STYLES.map((s) => (
                 <Opt
                   key={s.id}
@@ -703,15 +804,15 @@ export default function Wizard({ onClose, dbEnabled = false, open = true }) {
           </>
         );
 
-      /* 6 — message ----------------------------------------------------- */
-      case 5: {
-        const who = RECIPIENTS.find((r) => r.id === data.recipient);
+      /* ---- message --------------------------------------------------- */
+      case 'message': {
+        const who = occasionRecipients(occasionId).find((r) => r.id === data.recipient);
         const sub = `Written for ${who ? who.label.toLowerCase() : 'anyone'}, in the ${(
           STYLE_LABEL[data.style] || 'chosen'
         ).toLowerCase()} style. Tap one, then make it yours.`;
         return (
           <>
-            <Head kicker="Step six" title={copy.messageQ} sub={sub} />
+            <Head kicker={kicker} title={copy.messageQ} sub={sub} />
             <div className="msg-list" role="listbox" aria-label="Suggested messages">
               {messages.length ? (
                 messages.map((m, i) => (
@@ -776,23 +877,23 @@ export default function Wizard({ onClose, dbEnabled = false, open = true }) {
         );
       }
 
-      /* 7 — promise + memory (optional) --------------------------------- */
-      case 6:
+      /* ---- promise / wish + memory (optional) ------------------------ */
+      case 'promise':
         return (
           <>
-            <Head kicker="Step seven" title={copy.promiseQ} sub={copy.promiseSub} />
+            <Head kicker={kicker} title={copy.promiseQ} sub={copy.promiseSub} />
             <div className="field">
-              <label htmlFor="fProm">I promise to…</label>
+              <label htmlFor="fProm">{occasion.promise.label}</label>
               <input
                 className="input"
                 id="fProm"
                 type="text"
                 maxLength={LIMITS.promise}
-                placeholder="call you back before you have to text twice"
+                placeholder={occasion.promise.placeholder}
                 value={data.promise}
                 onChange={(e) => set({ promise: e.target.value })}
               />
-              <p className="hint">Small and true beats big and vague.</p>
+              <p className="hint">{occasion.promise.hint}</p>
             </div>
             <div className="field">
               <label htmlFor="fMem">A memory I love: …</label>
@@ -815,7 +916,7 @@ export default function Wizard({ onClose, dbEnabled = false, open = true }) {
               }}
               onNext={() => {
                 set({
-                  promise: tidy(data.promise).replace(/^i\s+promise\s+to\s+/i, ''),
+                  promise: stripPromiseLead(occasionId, tidy(data.promise)),
                   memory: tidy(data.memory).replace(/^remember\s+/i, '').replace(/[?.]+$/, ''),
                 });
                 next();
@@ -824,11 +925,11 @@ export default function Wizard({ onClose, dbEnabled = false, open = true }) {
           </>
         );
 
-      /* 8 — theme ------------------------------------------------------- */
-      case 7:
+      /* ---- theme ----------------------------------------------------- */
+      case 'theme':
         return (
           <>
-            <Head kicker="Step eight" title={copy.themeQ} sub={copy.themeSub} />
+            <Head kicker={kicker} title={copy.themeQ} sub={copy.themeSub} />
             <div className="themes" role="radiogroup" aria-label="Theme">
               {THEMES.map((t) => (
                 <button
@@ -852,16 +953,16 @@ export default function Wizard({ onClose, dbEnabled = false, open = true }) {
           </>
         );
 
-      /* 9 — stickers (optional) ----------------------------------------- */
-      case 8: {
+      /* ---- stickers (optional) --------------------------------------- */
+      case 'stickers': {
         const chosen = data.stickers;
         const full = chosen.length >= MAX_STICKERS;
         const pack = PACKS.find((p) => p.id === packId) || PACKS[0];
-        const suggestions = suggestedStickers(data.style, data.severity);
+        const suggestions = occasionSuggestedStickers(occasionId, data.style, data.severity);
         return (
           <>
             <Head
-              kicker="Step nine"
+              kicker={kicker}
               title="Add stickers 🧸"
               sub="Optional. Six packs, sixty-two drawings — pick up to four and we'll stick them on their card. A couple peek out from the envelope too."
             />
@@ -869,8 +970,8 @@ export default function Wizard({ onClose, dbEnabled = false, open = true }) {
               {chosen.length} of {MAX_STICKERS} picked
             </span>
 
-            {/* Three one-tap picks matched to the style and the size of the oops,
-                so nobody has to scroll sixty-two drawings to get started. */}
+            {/* Three one-tap picks matched to the occasion and the tone, so
+                nobody has to scroll sixty-two drawings to get started. */}
             <div className="suggest">
               <p className="suggest__label">Suggested for this letter ✨</p>
               <div className="suggest__row">
@@ -945,15 +1046,11 @@ export default function Wizard({ onClose, dbEnabled = false, open = true }) {
         );
       }
 
-      /* 10 — preview + create ------------------------------------------- */
-      case 9:
+      /* ---- preview + create ------------------------------------------ */
+      case 'preview':
         return (
           <>
-            <Head
-              kicker="Almost there"
-              title="Here it is"
-              sub="A preview of what lands on their screen. Happy with it? Let's make the link."
-            />
+            <Head kicker={kicker} title="Here it is" sub={copy.previewSub} />
             <div className="order">
               <div>
                 <MiniCard card={card} />
@@ -962,6 +1059,12 @@ export default function Wizard({ onClose, dbEnabled = false, open = true }) {
                 <CutenessMeter data={data} />
 
                 <div className="summary">
+                  <div className="summary__row">
+                    <b>Occasion</b>
+                    <span>
+                      {occasion.picker.emoji} {occasion.label}
+                    </span>
+                  </div>
                   <div className="summary__row">
                     <b>For</b>
                     <span>{card.to_name}</span>
@@ -975,7 +1078,7 @@ export default function Wizard({ onClose, dbEnabled = false, open = true }) {
                     <span>{STYLE_LABEL[card.style] || card.style}</span>
                   </div>
                   <div className="summary__row">
-                    <b>Theme</b>
+                    <b>Card theme</b>
                     <span>{(THEMES.find((t) => t.id === card.theme) || {}).label}</span>
                   </div>
                 </div>
@@ -1067,7 +1170,7 @@ export default function Wizard({ onClose, dbEnabled = false, open = true }) {
           </>
         );
 
-      /* 10 — success ---------------------------------------------------- */
+      /* ---- success --------------------------------------------------- */
       default:
         return (
           <div className="done">
@@ -1108,8 +1211,8 @@ export default function Wizard({ onClose, dbEnabled = false, open = true }) {
                 />
 
                 <ShareRow
-                  label={`Send it to ${card.to_name} 💌`}
-                  text={`💌 ${card.to_name}, I have something to say to you…`}
+                  label={`Send it to ${card.to_name} ${occasion.badge}`}
+                  text={`${occasion.badge} ${card.to_name}, I have something for you…`}
                   url={links.card}
                   channels={['native', 'whatsapp', 'telegram', 'sms', 'instagram', 'copy']}
                 />
@@ -1162,7 +1265,7 @@ export default function Wizard({ onClose, dbEnabled = false, open = true }) {
       className="wizard"
       role="dialog"
       aria-modal="true"
-      aria-label="Create your apology card"
+      aria-label="Create your card"
       /* Hidden rather than unmounted, so answers survive a close/reopen. */
       hidden={!open}
       inert={!open}
@@ -1177,9 +1280,9 @@ export default function Wizard({ onClose, dbEnabled = false, open = true }) {
 
           <div className="wizard__progress">
             <div className="wizard__track">
-              <div className="wizard__fill" style={{ width: `${done ? 100 : (shown / TOTAL_STEPS) * 100}%` }} />
+              <div className="wizard__fill" style={{ width: `${done ? 100 : (shown / totalSteps) * 100}%` }} />
             </div>
-            <span className="wizard__count">{done ? 'All done 🎉' : `Step ${shown} of ${TOTAL_STEPS}`}</span>
+            <span className="wizard__count">{done ? 'All done 🎉' : `Step ${shown} of ${totalSteps}`}</span>
           </div>
 
           <button type="button" className="icon-btn" onClick={onClose} aria-label="Close and return to site">
@@ -1193,11 +1296,11 @@ export default function Wizard({ onClose, dbEnabled = false, open = true }) {
       <div className="wizard__body">
         <div className="wizard__stage">
           <section
-            key={step}
+            key={`${occasionId}-${step}`}
             ref={stepRef}
             tabIndex={-1}
             className={`wstep is-active${direction < 0 ? ' is-back' : ''}`}
-            aria-label={stepTitles[step] || 'Your card is ready'}
+            aria-label={stepTitles[key] || 'Your card is ready'}
           >
             {renderStep()}
           </section>

@@ -6,7 +6,7 @@ import { addReaction, markOpened, setForgiven } from '../actions';
 import { REACTION_EMOJI, MAX_STICKERS, STICKER_REACTION_PREFIX, softenReason } from '@/lib/constants';
 import { PACKS, Sticker } from './stickers';
 import PackTabs from './PackTabs';
-import { getOccasion, envelopeSubtitle } from '@/lib/occasions';
+import { getOccasion, envelopeSubtitle, envelopeTitle, promiseText, fill } from '@/lib/occasions';
 import { findMyCard } from '@/lib/mycards';
 import { CUTENESS_MAX, cardCutenessStart, cutenessTapStep, cutenessLabel } from '@/lib/cuteness';
 import ShareRow from './ShareRow';
@@ -31,9 +31,12 @@ import {
  * tracking actions no-op in that case.
  */
 
-const NO_LABELS = ['No 😤', 'Are you sure?', 'Really?', 'Please? 🥺', 'Okay fine… yes 🤍'];
+/* The dodging button's script. Each occasion supplies its own — see
+   lib/occasions.js — and this is the fallback if one ever forgets to. */
+const FALLBACK_NO_LABELS = ['No 😤', 'Are you sure?', 'Really?', 'Please? 🥺', 'Okay fine… yes 🤍'];
 
-/* Forgiveness meter checkpoints. */
+/* Meter checkpoints. The meter is forgiveness, birthday spirit or butterflies
+   depending on the occasion, but the mechanics never change. */
 const METER_OPENED = 35;
 const METER_READ = 70;
 const METER_FULL = 100;
@@ -87,7 +90,7 @@ export default function CardExperience({ card, live = false, initialReactions = 
   const [showLetter, setShowLetter] = useState(false);
   const [typedDone, setTypedDone] = useState(false);
   const [showForgive, setShowForgive] = useState(false);
-  const [forgiven, setForgivenState] = useState(false);
+  const [forgiven, setForgivenState] = useState(false);   // "the moment happened" 
   /* The beat between "Yes" and the confetti, while the meter fills. */
   const [forgiving, setForgiving] = useState(false);
   /* Set once they send anything back, so the reply row stays put afterwards. */
@@ -271,6 +274,18 @@ export default function CardExperience({ card, live = false, initialReactions = 
     [forgiven, forgiving, live, card.id],
   );
 
+  /**
+   * A candle going out is progress, not a refusal — so the birthday flow nudges
+   * the meter UP a little (and borrows the same "teasing" flash for the label,
+   * which reads as "ooh…" on a birthday card).
+   */
+  const handleBoost = useCallback(() => {
+    setMeter((v) => Math.min(METER_FULL - 5, v + 6));
+    setTeasing(true);
+    window.clearTimeout(teaseTimer.current);
+    teaseTimer.current = window.setTimeout(() => setTeasing(false), 1200);
+  }, []);
+
   /* Every "No" costs them a little forgiveness. Never below the opening score —
      the meter teases, it never punishes. */
   const handleNo = useCallback(() => {
@@ -321,7 +336,7 @@ export default function CardExperience({ card, live = false, initialReactions = 
             />
 
             <div className="env-scene__stack">
-              <h2>For {card.to_name}</h2>
+              <h2>{envelopeTitle(card.occasion, card.to_name)}</h2>
               <p className="env-scene__sub">{envelopeSubtitle(card.occasion, card.severity)}</p>
 
               <span className="env-wrap">
@@ -372,7 +387,13 @@ export default function CardExperience({ card, live = false, initialReactions = 
         ) : (
           /* ---------- Scene 2: the letter ---------- */
           <section className="cardapp__scene">
-            <ForgivenessMeter value={meter} teasing={teasing} full={forgiven} loading={forgiving} />
+            <MomentMeter
+              occasion={occasion}
+              value={meter}
+              teasing={teasing}
+              full={forgiven}
+              loading={forgiving}
+            />
 
             {/* `letter--stickered` reserves the top/bottom sticker band (see globals.css)
                 so a stuck-on sticker can never land on the message. */}
@@ -417,8 +438,8 @@ export default function CardExperience({ card, live = false, initialReactions = 
                 <div className="letter__extras">
                   {card.promise ? (
                     <div className="promise-box">
-                      <h4>My promise to you</h4>
-                      <p>I promise to {card.promise}</p>
+                      <h4>{occasion.promise.boxTitle}</h4>
+                      <p>{promiseText(card.occasion, card.promise)}</p>
                     </div>
                   ) : null}
                   {card.memory ? (
@@ -465,16 +486,36 @@ export default function CardExperience({ card, live = false, initialReactions = 
               ) : null}
             </article>
 
+            {/* The recipient's moment. Three shapes so far — an apology asks
+                to be forgiven, a birthday has candles to blow out, and a
+                proposal asks the only question that matters. They all end the
+                same way: `handleForgive` fills the meter, celebrates, and
+                stamps the card. */}
             {showForgive ? (
-              <ForgiveBlock
-                occasion={occasion}
-                fromName={card.from_name}
-                forgiven={forgiven}
-                forgiving={forgiving}
-                meterValue={meter}
-                onForgive={handleForgive}
-                onNo={handleNo}
-              />
+              occasion.moment === 'candles' ? (
+                <CandleMoment
+                  occasion={occasion}
+                  toName={card.to_name}
+                  fromName={card.from_name}
+                  severity={card.severity}
+                  done={forgiven}
+                  working={forgiving}
+                  meterValue={meter}
+                  onComplete={handleForgive}
+                  onProgress={handleBoost}
+                />
+              ) : (
+                <ForgiveBlock
+                  occasion={occasion}
+                  toName={card.to_name}
+                  fromName={card.from_name}
+                  forgiven={forgiven}
+                  forgiving={forgiving}
+                  meterValue={meter}
+                  onForgive={handleForgive}
+                  onNo={handleNo}
+                />
+              )
             ) : null}
 
             {forgiven ? (
@@ -491,10 +532,10 @@ export default function CardExperience({ card, live = false, initialReactions = 
                 stays for good once anything has been sent. */}
             {forgiven || replied ? (
               <div className="replyback">
-                <p className="replyback__title">Let {card.from_name} know 💌</p>
-                <p className="replyback__sub">Send this same link back — it is the fastest way to say “I saw it”.</p>
+                <p className="replyback__title">{fill(occasion.reply.title, { from: card.from_name })}</p>
+                <p className="replyback__sub">{occasion.reply.sub}</p>
                 <ShareRow
-                  text="I opened your letter 🤍 come see —"
+                  text={occasion.reply.shareText}
                   url={pageUrl}
                   channels={['native', 'whatsapp', 'telegram', 'sms', 'copy']}
                   hint={`When ${card.from_name} opens this on their own phone, Truce shows them the way back to their private page — so even if they lost that link, this is how they find your reply.`}
@@ -518,19 +559,25 @@ function resolveCardId(card) {
 }
 
 /* ==========================================================================
-   The forgiveness meter
+   The moment meter
+   --------------------------------------------------------------------------
+   One bar, three personalities: "Forgiveness" on an apology, "Birthday spirit"
+   on a birthday, "Butterflies" on a proposal. Identical mechanics — it starts
+   when the envelope opens, jumps when the letter has been read, and fills to
+   the top at the moment itself. Only the words come from lib/occasions.js.
    ========================================================================== */
 
-function meterLabel(value, teasing, full) {
-  if (teasing) return 'hmm…';
-  if (full || value >= METER_FULL) return 'Fully forgiven 💖';
-  if (value >= METER_READ) return 'almost there…';
-  if (value > 0) return 'warming up…';
-  return 'sealed';
+function meterLabel(meter, value, teasing, full) {
+  if (teasing) return meter.teasing;
+  if (full || value >= METER_FULL) return meter.full;
+  if (value >= METER_READ) return meter.near;
+  if (value > 0) return meter.warm;
+  return meter.idle;
 }
 
-function ForgivenessMeter({ value, teasing, full, loading = false }) {
-  const label = loading ? 'loading…' : meterLabel(value, teasing, full);
+function MomentMeter({ occasion, value, teasing, full, loading = false }) {
+  const meter = occasion.meter;
+  const label = loading ? meter.loading : meterLabel(meter, value, teasing, full);
   const pct = Math.max(0, Math.min(100, value));
   return (
     <div
@@ -539,13 +586,13 @@ function ForgivenessMeter({ value, teasing, full, loading = false }) {
       }`}
     >
       <div className="meter__head">
-        <span className="meter__title">Forgiveness</span>
+        <span className="meter__title">{meter.title}</span>
         <span className="meter__label">{label}</span>
       </div>
       <div
         className="meter__track"
         role="progressbar"
-        aria-label="Forgiveness meter"
+        aria-label={meter.ariaLabel}
         aria-valuemin={0}
         aria-valuemax={100}
         aria-valuenow={Math.round(pct)}
@@ -692,7 +739,19 @@ function measureUntransformed(button) {
   return base;
 }
 
-function ForgiveBlock({ occasion, fromName, forgiven, forgiving = false, meterValue = 0, onForgive, onNo }) {
+function ForgiveBlock({
+  occasion,
+  toName,
+  fromName,
+  forgiven,
+  forgiving = false,
+  meterValue = 0,
+  onForgive,
+  onNo,
+}) {
+  /* "No 😤 → Are you sure? → … → Okay fine… yes 🤍" for an apology; a softer
+     script for a proposal. Same machinery, same surrender. */
+  const NO_LABELS = occasion.noLabels || FALLBACK_NO_LABELS;
   const zoneRef = useRef(null);
   const noRef = useRef(null);
   const yesRef = useRef(null);
@@ -937,7 +996,7 @@ function ForgiveBlock({ occasion, fromName, forgiven, forgiving = false, meterVa
     const pct = Math.max(0, Math.min(100, meterValue));
     return (
       <div className="forgive">
-        <h3>{occasion.forgiveQuestion}</h3>
+        <h3>{occasion.momentQuestion}</h3>
         <div className="forgive__loading" role="status">
           <span className="forgive__loading-heart" aria-hidden="true">
             💗
@@ -945,7 +1004,7 @@ function ForgiveBlock({ occasion, fromName, forgiven, forgiving = false, meterVa
           <span className="forgive__loading-track" aria-hidden="true">
             <span className="forgive__loading-fill" style={{ width: `${pct}%` }} />
           </span>
-          <p>Forgiving…</p>
+          <p>{occasion.meter.loadingCaption}</p>
         </div>
       </div>
     );
@@ -956,11 +1015,11 @@ function ForgiveBlock({ occasion, fromName, forgiven, forgiving = false, meterVa
       <div className="forgive">
         <div className="forgiven">
           <span className="forgiven__emoji" aria-hidden="true">
-            🎉
+            {occasion.momentDoneEmoji}
           </span>
-          <h3>{occasion.forgiveDone}</h3>
-          <p>{fromName} can breathe again.</p>
-          <HugButton />
+          <h3>{fill(occasion.momentDone, { name: toName, from: fromName })}</h3>
+          <p>{fill(occasion.momentDoneSub, { name: toName, from: fromName })}</p>
+          <HugButton label={occasion.hugLabel} />
         </div>
       </div>
     );
@@ -968,7 +1027,7 @@ function ForgiveBlock({ occasion, fromName, forgiven, forgiving = false, meterVa
 
   return (
     <div className="forgive">
-      <h3>{occasion.forgiveQuestion}</h3>
+      <h3>{occasion.momentQuestion}</h3>
       <div className="forgive__zone" ref={zoneRef}>
         <button
           type="button"
@@ -976,7 +1035,7 @@ function ForgiveBlock({ occasion, fromName, forgiven, forgiving = false, meterVa
           ref={yesRef}
           onClick={(e) => onForgive(e.currentTarget)}
         >
-          Yes ❤️
+          {occasion.momentYes || 'Yes ❤️'}
         </button>
         <button
           type="button"
@@ -1006,8 +1065,8 @@ function ForgiveBlock({ occasion, fromName, forgiven, forgiving = false, meterVa
   );
 }
 
-function HugButton() {
-  const [label, setLabel] = useState('Send a hug back 🤗');
+function HugButton({ label: initial = 'Send a hug back 🤗' }) {
+  const [label, setLabel] = useState(initial);
   return (
     <button
       type="button"
@@ -1020,6 +1079,214 @@ function HugButton() {
     >
       {label}
     </button>
+  );
+}
+
+/* ==========================================================================
+   The candles — a birthday's version of the forgive moment
+   --------------------------------------------------------------------------
+   A drawn cake in the card's own theme, with `severity + 2` lit candles: three
+   for a quiet little moment, five for the full fireworks. Each tap puts one out
+   with a puff of smoke, and the last one takes the confetti.
+
+   Everything is drawn with CSS and one small SVG so it themes itself — the cake
+   is made of var(--t-accent) and var(--t-paper) like the rest of the card, and
+   looks right on Midnight Plum as well as Blush Rose.
+   ========================================================================== */
+
+/** How many candles for a given "how big should this feel?" answer. */
+function candleCount(severity) {
+  const n = Number(severity);
+  return ([1, 2, 3].includes(n) ? n : 2) + 2;
+}
+
+/**
+ * The cake, in one viewBox with no wasted space at the top — the candles are
+ * real DOM buttons sitting directly above it, so any padding inside the SVG
+ * would leave them hovering in mid-air.
+ *
+ *   y  2 – 22   frosting, with drips reaching ~33
+ *   y 14 – 76   the cake itself (its top hidden under the frosting)
+ *   y 74 – 85   the plate
+ */
+const CAKE = { left: 26, right: 194, radius: 13, frostTop: 2, frostBase: 22, bumps: 7 };
+
+/**
+ * The scalloped frosting: rounded shoulders, then drips drawn right to left so
+ * they line up however wide the cake is.
+ */
+function frostingPath({ left, right, radius, frostTop, frostBase, bumps }) {
+  const w = (right - left) / bumps;
+  let d =
+    `M${left} ${frostTop + radius}` +
+    ` a${radius} ${radius} 0 0 1 ${radius} ${-radius}` +
+    ` H${right - radius}` +
+    ` a${radius} ${radius} 0 0 1 ${radius} ${radius}` +
+    ` V${frostBase}`;
+  for (let i = 0; i < bumps; i += 1) d += ` q ${-w / 2} 11 ${-w} 0`;
+  return `${d} Z`;
+}
+
+/* Fixed so the cake looks identical on every render. */
+const SPRINKLES = [
+  { x: 50, y: 44, r: 3.1, o: 0.5 },
+  { x: 76, y: 56, r: 2.4, o: 0.38 },
+  { x: 104, y: 42, r: 3.4, o: 0.46 },
+  { x: 133, y: 57, r: 2.6, o: 0.4 },
+  { x: 160, y: 45, r: 3, o: 0.48 },
+  { x: 90, y: 64, r: 2.2, o: 0.32 },
+  { x: 146, y: 38, r: 2.2, o: 0.32 },
+  { x: 118, y: 66, r: 2.4, o: 0.3 },
+];
+
+function CandleMoment({
+  occasion,
+  toName,
+  fromName,
+  severity,
+  done,
+  working = false,
+  meterValue = 0,
+  onComplete,
+  onProgress,
+}) {
+  const total = candleCount(severity);
+  const [outCount, setOutCount] = useState(0);
+  const zoneRef = useRef(null);
+
+  /* Same courtesy as the forgive block: make sure the moment is on screen when
+     it arrives, rather than half a scroll below the fold. */
+  useEffect(() => {
+    const zone = zoneRef.current;
+    if (!zone || typeof zone.scrollIntoView !== 'function') return undefined;
+    const t = window.setTimeout(() => {
+      try {
+        zone.scrollIntoView({ block: 'center', behavior: prefersReducedMotion() ? 'auto' : 'smooth' });
+      } catch {
+        zone.scrollIntoView();
+      }
+    }, 60);
+    return () => window.clearTimeout(t);
+  }, []);
+
+  const blowOut = (index, element) => {
+    if (done || working) return;
+    if (index < outCount) return;              // already out
+    if (index !== outCount) return;            // one at a time, left to right
+
+    const next = outCount + 1;
+    setOutCount(next);
+
+    /* A puff of wish-sparkle from the wick itself. */
+    if (element) {
+      const r = element.getBoundingClientRect();
+      burstGlyphs(r.left + r.width / 2, r.top, {
+        count: next >= total ? 12 : 5,
+        glyphs: ['✨', '💫', '🕯️'],
+        rise: true,
+        min: 12,
+        max: 24,
+      });
+    }
+
+    if (next >= total) {
+      onComplete(element);
+      return;
+    }
+    if (onProgress) onProgress();
+  };
+
+  if (working) {
+    const pct = Math.max(0, Math.min(100, meterValue));
+    return (
+      <div className="forgive" ref={zoneRef}>
+        <h3>{occasion.momentQuestion}</h3>
+        <div className="forgive__loading" role="status">
+          <span className="forgive__loading-heart" aria-hidden="true">
+            🕯️
+          </span>
+          <span className="forgive__loading-track" aria-hidden="true">
+            <span className="forgive__loading-fill" style={{ width: `${pct}%` }} />
+          </span>
+          <p>{occasion.meter.loadingCaption}</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (done) {
+    return (
+      <div className="forgive" ref={zoneRef}>
+        <div className="forgiven">
+          <span className="forgiven__emoji" aria-hidden="true">
+            {occasion.momentDoneEmoji}
+          </span>
+          <h3>{fill(occasion.momentDone, { name: toName, from: fromName })}</h3>
+          <p>{fill(occasion.momentDoneSub, { name: toName, from: fromName })}</p>
+          <HugButton label={occasion.hugLabel} />
+        </div>
+      </div>
+    );
+  }
+
+  const lit = total - outCount;
+
+  return (
+    <div className="forgive" ref={zoneRef}>
+      <h3>{occasion.momentQuestion}</h3>
+      {occasion.momentSub ? <p className="cake__sub">{occasion.momentSub}</p> : null}
+
+      <div className="cake">
+        <div className="cake__candles">
+          {Array.from({ length: total }, (_, i) => {
+            const isOut = i < outCount;
+            return (
+              <button
+                type="button"
+                key={i}
+                className={`candle${isOut ? ' is-out' : ''}`}
+                disabled={isOut}
+                aria-label={
+                  isOut
+                    ? `Candle ${i + 1} of ${total}, blown out`
+                    : `Blow out candle ${i + 1} of ${total}`
+                }
+                onClick={(e) => blowOut(i, e.currentTarget)}
+              >
+                <span className="candle__smoke" aria-hidden="true" />
+                <span className="candle__flame" aria-hidden="true" />
+                <span className="candle__wick" aria-hidden="true" />
+                <span className="candle__stick" aria-hidden="true" />
+              </button>
+            );
+          })}
+        </div>
+
+        <svg className="cake__art" viewBox="0 0 220 92" role="img" aria-label="A birthday cake">
+          {/* the shadow it sits in */}
+          <ellipse cx="110" cy="86" rx="80" ry="5" fill="var(--t-ink)" opacity="0.11" />
+          {/* the plate */}
+          <rect x="16" y="73" width="188" height="11" rx="5.5" fill="var(--t-accent-soft)" />
+          <rect x="16" y="73" width="188" height="4" rx="2" fill="var(--t-paper)" opacity="0.4" />
+          {/* the cake itself — its top edge hides under the frosting */}
+          <rect x="26" y="14" width="168" height="62" rx="13" fill="var(--t-accent)" />
+          {SPRINKLES.map((sp, i) => (
+            <circle key={i} cx={sp.x} cy={sp.y} r={sp.r} fill="var(--t-paper)" opacity={sp.o} />
+          ))}
+          {/* a soft highlight so the side does not read flat */}
+          <rect x="36" y="30" width="42" height="7" rx="3.5" fill="var(--t-paper)" opacity="0.2" />
+          {/* frosting, dripping over the edge */}
+          <path d={frostingPath(CAKE)} fill="var(--t-paper)" />
+          <path d={frostingPath(CAKE)} fill="var(--t-accent)" opacity="0.09" />
+        </svg>
+      </div>
+
+      <p className="cake__count" role="status">
+        {lit > 0
+          ? `${lit} candle${lit === 1 ? '' : 's'} still lit 🕯️`
+          : 'All out — make it count ✨'}
+      </p>
+    </div>
   );
 }
 
