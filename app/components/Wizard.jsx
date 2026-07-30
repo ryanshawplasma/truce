@@ -2,16 +2,20 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import MESSAGES from '../data/messages';
-import { createCard } from '../actions';
+import { createCard, getCapabilities } from '../actions';
 import {
   RECIPIENTS, SEVERITIES, REASONS, STYLES, STYLE_LABEL, THEMES, LIMITS, FEELING_EMOJI, MAX_STICKERS,
-  softenReason,
+  softenReason, suggestedStickers, stickerLabel, normaliseUnlockAt, UNLOCK_MIN_MS, UNLOCK_MAX_MS,
 } from '@/lib/constants';
 import { PACKS, Sticker } from './stickers';
 import PackTabs from './PackTabs';
 import { getOccasion, envelopeSubtitle } from '@/lib/occasions';
 import { rememberCard } from '@/lib/mycards';
-import { celebrate, copyText } from './ui';
+import { CUTENESS_MAX, cutenessScore, cutenessLabel, cutenessHint } from '@/lib/cuteness';
+import { celebrate } from './ui';
+import CopyRow from './CopyRow';
+import ShareRow from './ShareRow';
+import BetaChip from './BetaChip';
 
 /**
  * The card maker.
@@ -38,7 +42,26 @@ const EMPTY = {
   memory: '',
   theme: 'blush',
   stickers: [],
+  /* Time capsule. `sealed` is the toggle; `unlockLocal` is the raw value of the
+     datetime-local field, which is a local-clock string like "2026-12-25T09:00". */
+  sealed: false,
+  unlockLocal: '',
 };
+
+/* How long we wait for "Create your card" before offering a retry. A server
+   action that never settles used to leave the button spinning forever. */
+const CREATE_TIMEOUT_MS = 12000;
+
+/* datetime-local speaks local wall-clock time, so both ends of the range have
+   to be formatted in the visitor's own timezone rather than as ISO/UTC. */
+function toLocalInputValue(ms) {
+  const d = new Date(ms);
+  const pad = (n) => String(n).padStart(2, '0');
+  return (
+    `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}` +
+    `T${pad(d.getHours())}:${pad(d.getMinutes())}`
+  );
+}
 
 /* ---------------------------------------------------------------- helpers */
 
@@ -80,58 +103,15 @@ function toCard(data) {
     style: data.style || 'sweet',
     theme: data.theme,
     stickers: data.stickers,
+    /* null unless they sealed it; the server re-validates either way. */
+    unlock_at: data.sealed && data.unlockLocal ? new Date(data.unlockLocal).toISOString() : null,
   };
 }
 
 /* ------------------------------------------------------------- cuteness */
 
-/**
- * The cuteness meter — pure fun, nothing is stored or sent anywhere.
- *
- * It rewards the things that actually make a card feel personal: a promise, a
- * memory, stickers, a bit of emoji in the message. Full marks is reachable but
- * takes effort, which is the point.
- */
-/* Yes, it goes to 120%. Cuteness does not respect the laws of percentages. */
-const CUTENESS_MAX = 120;
-
-function cutenessScore(data) {
-  let score = 30; // you showed up and wrote something
-  if (tidy(data.promise)) score += 18;
-  if (tidy(data.memory)) score += 18;
-  score += Math.min(4, (data.stickers || []).length) * 7; // up to 28
-  score += Math.min(4, countEmoji(data.message)) * 4; //     up to 16
-  if (data.style) score += 5;
-  if (data.theme) score += 5;
-  return Math.max(0, Math.min(CUTENESS_MAX, score));
-}
-
-/** How many emoji are sprinkled through the message. */
-function countEmoji(text) {
-  const matches = String(text || '').match(/\p{Extended_Pictographic}/gu);
-  return matches ? matches.length : 0;
-}
-
-function cutenessLabel(score) {
-  if (score >= 120) return 'meter broken 🚨🧸💘';
-  if (score >= 105) return 'off the charts 💘💘';
-  if (score >= 90) return 'dangerously cute 🧸💘';
-  if (score >= 80) return 'critically cute 💞';
-  if (score >= 68) return 'extremely cute 🎀';
-  if (score >= 54) return 'very cute 🧁';
-  if (score >= 42) return 'pretty cute 🌸';
-  return 'sweet start 🌱';
-}
-
-/** A nudge towards the one thing that would help most. */
-function cutenessHint(data) {
-  if (!tidy(data.promise)) return 'Add a promise for a big cuteness bump.';
-  if (!tidy(data.memory)) return 'A shared memory would push this higher.';
-  if ((data.stickers || []).length < 2) return 'Stickers are worth a lot. Just saying.';
-  if (countEmoji(data.message) < 2) return 'A little emoji in the message goes a long way.';
-  if (cutenessScore(data) >= 120) return 'You broke the meter. 120%. There is no higher honor.';
-  return 'Honestly? This is about as cute as it gets.';
-}
+/* The scoring itself lives in lib/cuteness.js, because the card the recipient
+   opens shows the same meter (and lets them poke it). */
 
 function CutenessMeter({ data, showHint = true }) {
   const score = cutenessScore(data);
@@ -170,7 +150,7 @@ function MiniCard({ card }) {
       {stickers.map((id, i) => (
         <Sticker key={id} id={id} size={44} className={`mini-sticker mini-sticker--${i + 1}`} />
       ))}
-      <div className="mini__top" style={{ background: 'var(--t-env-flap)', color: 'var(--t-ink)' }}>
+      <div className="mini__top" style={{ background: 'var(--t-env-flap)', color: 'var(--t-ink)' }}>{/* envelope side: page ink */}
         <div className="mini__seal" style={{ background: 'var(--t-seal)', color: '#fff' }} aria-hidden="true">
           ♥
         </div>
@@ -178,7 +158,7 @@ function MiniCard({ card }) {
         <div style={{ fontSize: '.82rem', opacity: 0.75 }}>{envelopeSubtitle(card.occasion, card.severity)}</div>
       </div>
 
-      <div className="mini__body" style={{ background: 'var(--t-paper)', color: 'var(--t-ink)' }}>
+      <div className="mini__body" style={{ background: 'var(--t-paper)', color: 'var(--t-paper-ink)' }}>
         <div className="mini__dear">Dear {card.to_name || 'you'},</div>
         <div className="mini__msg">{card.message || 'Your message will appear here.'}</div>
 
@@ -187,14 +167,14 @@ function MiniCard({ card }) {
         {card.reason ? <div className="mini__about">…about {softenReason(card.reason)} 🙈</div> : null}
 
         {card.promise ? (
-          <div className="mini__extra" style={{ background: 'var(--t-accent-soft)', color: 'var(--t-ink)' }}>
+          <div className="mini__extra" style={{ background: 'var(--t-accent-soft)', color: 'var(--t-paper-ink)' }}>
             <b style={{ color: 'var(--t-accent)' }}>My promise to you:</b>
             <br />I promise to {card.promise}
           </div>
         ) : null}
 
         {card.memory ? (
-          <div className="mini__extra" style={{ background: 'var(--t-accent-soft)', color: 'var(--t-ink)' }}>
+          <div className="mini__extra" style={{ background: 'var(--t-accent-soft)', color: 'var(--t-paper-ink)' }}>
             Remember {card.memory}? I want more of that.
           </div>
         ) : null}
@@ -210,26 +190,10 @@ function MiniCard({ card }) {
 /* --------------------------------------------------------- copy-able link */
 
 function LinkRow({ label, url, help, tone = 'public' }) {
-  const [state, setState] = useState('');
-
-  const onCopy = async () => {
-    const ok = await copyText(url);
-    setState(ok ? 'Copied 🤍' : 'Select the link and copy it manually.');
-    setTimeout(() => setState(''), 2600);
-  };
-
   return (
     <div className="linkgroup">
       <h4>{label}</h4>
-      <div className={`linkbox${tone === 'private' ? ' linkbox--private' : ''}`}>
-        <input type="text" readOnly value={url} aria-label={label} onFocus={(e) => e.target.select()} />
-        <button type="button" className="btn btn--primary btn--sm" onClick={onCopy}>
-          Copy
-        </button>
-      </div>
-      <p className="copy-state" role="status">
-        {state}
-      </p>
+      <CopyRow url={url} ariaLabel={label} tone={tone} />
       {help ? <p>{help}</p> : null}
     </div>
   );
@@ -239,7 +203,7 @@ function LinkRow({ label, url, help, tone = 'public' }) {
    Wizard
    ========================================================================== */
 
-export default function Wizard({ onClose }) {
+export default function Wizard({ onClose, dbEnabled = false }) {
   const occasion = getOccasion(OCCASION_ID);
   const copy = occasion.wizard;
 
@@ -250,8 +214,12 @@ export default function Wizard({ onClose }) {
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState(null); // what createCard gave us back
   const [packId, setPackId] = useState(PACKS[0].id); // sticker step: visible pack
+  /* Starts from the value the (static) page was built with, then confirms it
+     against the running server — see getCapabilities in app/actions.js. */
+  const [dbReady, setDbReady] = useState(dbEnabled);
   const stepRef = useRef(null);
   const messageRef = useRef(null);
+  const attemptRef = useRef(0);
 
   const set = useCallback((patch) => setData((d) => ({ ...d, ...patch })), []);
 
@@ -272,6 +240,21 @@ export default function Wizard({ onClose }) {
     }
     goTo(step - 1, -1);
   }, [goTo, onClose, step]);
+
+  useEffect(() => {
+    let alive = true;
+    getCapabilities()
+      .then((caps) => {
+        if (alive) setDbReady(Boolean(caps && caps.db));
+      })
+      .catch(() => {
+        /* Keep whatever the page was built with — the worst case is that the
+           seal toggle is hidden, and createCard still does the right thing. */
+      });
+    return () => {
+      alive = false;
+    };
+  }, []);
 
   /* Esc closes the maker. */
   useEffect(() => {
@@ -295,6 +278,16 @@ export default function Wizard({ onClose }) {
 
   const messages = useMemo(() => filterMessages(data.style, data.recipient), [data.style, data.recipient]);
   const card = useMemo(() => toCard(data), [data]);
+
+  /* Bounds for the seal-date picker, in the visitor's own clock. Computed once
+     per mount: good enough, and it keeps the input from re-rendering every tick. */
+  const unlockRange = useMemo(
+    () => ({
+      min: toLocalInputValue(Date.now() + UNLOCK_MIN_MS),
+      max: toLocalInputValue(Date.now() + UNLOCK_MAX_MS),
+    }),
+    [],
+  );
 
   /** Drop an emoji into the message at the cursor (or at the end). */
   function insertEmoji(glyph) {
@@ -351,11 +344,36 @@ export default function Wizard({ onClose }) {
   }
 
   /* -------------------------------------------------------------- create */
+  /**
+   * Creates the card, and refuses to hang while doing it.
+   *
+   * If the server has not answered within CREATE_TIMEOUT_MS we stop waiting,
+   * put the button back and offer a retry — no infinite spinner. The request
+   * itself is still in flight, so if a slow answer does turn up before they
+   * press retry we quietly accept it rather than making a second card.
+   */
   async function handleCreate() {
     if (busy) return;
+    const attempt = attemptRef.current + 1;
+    attemptRef.current = attempt;
+
     setBusy(true);
+    setErrors({});
+
+    const timer = window.setTimeout(() => {
+      if (attemptRef.current !== attempt) return;
+      setBusy(false);
+      setErrors({
+        create: 'That is taking longer than it should. Check your connection and try again — nothing was lost.',
+      });
+    }, CREATE_TIMEOUT_MS);
+
     try {
       const response = await createCard(card);
+      window.clearTimeout(timer);
+      /* Superseded by a retry — let the newer attempt own the screen. */
+      if (attemptRef.current !== attempt) return;
+
       if (!response.ok) {
         setErrors({ create: response.error || 'Something went wrong. Please try again.' });
         setBusy(false);
@@ -372,16 +390,35 @@ export default function Wizard({ onClose }) {
           editToken: response.editToken,
           toName: card.to_name,
           createdAt: new Date().toISOString(),
+          unlockAt: response.unlockAt || null,
         });
       }
 
       goTo(TOTAL_STEPS, 1);
       setTimeout(() => celebrate(), 260);
     } catch {
+      window.clearTimeout(timer);
+      if (attemptRef.current !== attempt) return;
       setErrors({ create: 'Could not reach the server. Please try again.' });
     } finally {
-      setBusy(false);
+      if (attemptRef.current === attempt) setBusy(false);
     }
+  }
+
+  /** Validate the seal date before we bother the server with it. */
+  function validateUnlock() {
+    if (!data.sealed) return true;
+    if (!data.unlockLocal) {
+      setErrors({ unlock: 'Pick the moment it should open.' });
+      return false;
+    }
+    const check = normaliseUnlockAt(new Date(data.unlockLocal).toISOString());
+    if (check.error) {
+      setErrors({ unlock: check.error });
+      return false;
+    }
+    setErrors({});
+    return true;
   }
 
   /* Links to show on the success screen. */
@@ -734,6 +771,7 @@ export default function Wizard({ onClose }) {
         const chosen = data.stickers;
         const full = chosen.length >= MAX_STICKERS;
         const pack = PACKS.find((p) => p.id === packId) || PACKS[0];
+        const suggestions = suggestedStickers(data.style, data.severity);
         return (
           <>
             <Head
@@ -744,6 +782,39 @@ export default function Wizard({ onClose }) {
             <span className="sticker-count">
               {chosen.length} of {MAX_STICKERS} picked
             </span>
+
+            {/* Three one-tap picks matched to the style and the size of the oops,
+                so nobody has to scroll sixty-two drawings to get started. */}
+            <div className="suggest">
+              <p className="suggest__label">Suggested for this letter ✨</p>
+              <div className="suggest__row">
+                {suggestions.map((id) => {
+                  const on = chosen.includes(id);
+                  const label = stickerLabel(id) || 'Sticker';
+                  return (
+                    <button
+                      type="button"
+                      key={id}
+                      className={`suggest__pick${on ? ' is-on' : ''}`}
+                      aria-pressed={on}
+                      disabled={!on && full}
+                      title={label}
+                      onClick={() =>
+                        set({
+                          stickers: on
+                            ? chosen.filter((x) => x !== id)
+                            : [...chosen, id].slice(0, MAX_STICKERS),
+                        })
+                      }
+                    >
+                      <Sticker id={id} size={54} className="suggest__art" />
+                      <span className="suggest__name">{label}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
             <PackTabs value={pack.id} onChange={setPackId} idPrefix="wiz" panelId="wiz-sticker-sheet" />
             <p className="pack-hint">Mix and match — your four can come from any pack.</p>
             <div
@@ -823,10 +894,74 @@ export default function Wizard({ onClose }) {
                   </div>
                 </div>
 
+                {/* ---- Time capsule --------------------------------------
+                    Only offered when there is a database to hold the letter:
+                    a hash link carries the card inside itself, so it cannot be
+                    kept shut. Rather than a toggle that silently does nothing,
+                    we say why. */}
+                {dbReady ? (
+                  <div className={`capsule${data.sealed ? ' is-on' : ''}`}>
+                    <label className="capsule__switch">
+                      <input
+                        type="checkbox"
+                        checked={data.sealed}
+                        onChange={(e) => {
+                          const sealed = e.target.checked;
+                          set({
+                            sealed,
+                            /* Default to a week today — a nice "next Saturday" sort of gap. */
+                            unlockLocal:
+                              sealed && !data.unlockLocal
+                                ? toLocalInputValue(Date.now() + 7 * 24 * 60 * 60 * 1000)
+                                : data.unlockLocal,
+                          });
+                          setErrors({});
+                        }}
+                      />
+                      <span className="capsule__track" aria-hidden="true" />
+                      <span className="capsule__text">
+                        <b>
+                          Seal until a special date 🕰️
+                          <BetaChip />
+                        </b>
+                        <small>They see a sealed envelope and a countdown until then.</small>
+                      </span>
+                    </label>
+
+                    {data.sealed ? (
+                      <div className="capsule__when">
+                        <label htmlFor="fUnlock">It opens on</label>
+                        <input
+                          className={`input${errors.unlock ? ' is-invalid' : ''}`}
+                          id="fUnlock"
+                          type="datetime-local"
+                          value={data.unlockLocal}
+                          min={unlockRange.min}
+                          max={unlockRange.max}
+                          onChange={(e) => {
+                            set({ unlockLocal: e.target.value });
+                            setErrors({});
+                          }}
+                        />
+                        <p className="hint">
+                          Your own clock, at least an hour from now. Until then not one word of your
+                          letter leaves our server — not even in the page source.
+                        </p>
+                        <p className="err">{errors.unlock || ''}</p>
+                      </div>
+                    ) : null}
+                  </div>
+                ) : (
+                  <p className="capsule-note">
+                    🕰️ Sealed letters are having a rest just now — this one will go out as a normal
+                    card, ready to open the moment you send it.
+                  </p>
+                )}
+
                 <button
                   type="button"
                   className="btn btn--primary btn--wide btn--lg"
-                  onClick={handleCreate}
+                  onClick={() => validateUnlock() && handleCreate()}
                   disabled={busy}
                 >
                   {busy ? (
@@ -862,6 +997,20 @@ export default function Wizard({ onClose }) {
               Send the first link to {card.to_name}. Keep the second one to yourself — it is how you check in later.
             </p>
 
+            {result && result.unlockAt ? (
+              <p className="sealed-receipt">
+                🕰️ Sealed. Until it opens, {card.to_name} sees a countdown and nothing else — you can
+                send the link right now.
+              </p>
+            ) : null}
+
+            {result && result.unlockDropped ? (
+              <p className="notice">
+                We couldn&rsquo;t seal this one, so it has gone out as a normal card — {card.to_name} can
+                open it straight away.
+              </p>
+            ) : null}
+
             <CutenessMeter data={data} showHint={false} />
 
             {links ? (
@@ -871,6 +1020,14 @@ export default function Wizard({ onClose }) {
                   url={links.card}
                   help="Text it, email it, AirDrop it. It opens in any browser, no app needed."
                 />
+
+                <ShareRow
+                  label={`Send it to ${card.to_name} 💌`}
+                  text={`💌 ${card.to_name}, I have something to say to you…`}
+                  url={links.card}
+                  channels={['native', 'whatsapp', 'telegram', 'sms', 'instagram', 'copy']}
+                />
+
                 {links.sender ? (
                   <>
                     <LinkRow
@@ -884,19 +1041,20 @@ export default function Wizard({ onClose }) {
                       <a href="/mine">My cards</a>.
                     </p>
                   </>
+                ) : /* Two different situations, and they must never be confused:
+                      a wobble we can apologise for, or a site that has simply not
+                      been switched on yet (which only its owner ever sees). */
+                result && result.degraded ? (
+                  <p className="notice">
+                    Heads up — our database hiccuped, so this link carries the whole letter inside it. It works
+                    perfectly, it is just long. Try again in a minute if you would like a short one.
+                  </p>
                 ) : (
                   <p className="notice">
-                    Running without a database, so this card travels inside its own link. It works perfectly and needs no
-                    server — but there is no open-tracking or reactions page for it. Add Supabase env vars (see the
-                    README) to switch on real short links.
+                    This link carries the whole letter inside it, so it works anywhere — it is just long. Short links,
+                    open-tracking and replies arrive once this site is connected to its database.
                   </p>
                 )}
-                {result && result.degraded ? (
-                  <p className="notice">
-                    We could not reach the database just now, so we made you a self-contained link instead. Nothing was
-                    lost.
-                  </p>
-                ) : null}
               </>
             ) : null}
 

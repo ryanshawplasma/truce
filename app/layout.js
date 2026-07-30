@@ -11,7 +11,7 @@ export const metadata = {
     template: '%s',
   },
   description:
-    "Truce turns an apology into an experience they'll actually want to open. 56 hand-written messages, four beautiful themes, a sealed envelope and a playful “Do you forgive me?” — delivered as a private link. Free while in beta.",
+    "Truce turns an apology into an experience they'll actually want to open. 56 hand-written messages, six beautiful themes, sealed time-capsule letters and a playful “Do you forgive me?” — delivered as a private link. Free while in beta.",
   applicationName: 'Truce',
   openGraph: {
     type: 'website',

@@ -156,6 +156,25 @@ export async function celebrate(originEl) {
   }
 }
 
+/**
+ * Give any promise a deadline.
+ *
+ * Server actions travel over the network, and a network can simply stop
+ * answering — a phone that lost signal mid-tap leaves the promise pending
+ * forever. Anything that disables a button while it waits uses this, so the
+ * interface always comes back.
+ *
+ * Resolves with `fallback` if the deadline passes first. The original promise
+ * is not cancelled (it cannot be); it is just no longer waited on.
+ */
+export function withTimeout(promise, ms = 10000, fallback = { ok: false, error: 'timeout' }) {
+  let timer = null;
+  const deadline = new Promise((resolve) => {
+    timer = setTimeout(() => resolve(fallback), ms);
+  });
+  return Promise.race([Promise.resolve(promise), deadline]).finally(() => clearTimeout(timer));
+}
+
 /* ------------------------------------------------------------------ toast */
 let toastEl = null;
 let toastTimer = null;
@@ -184,21 +203,21 @@ export function toast(message) {
   }, 2400);
 }
 
-/** Copy text to the clipboard, with a fallback for older/insecure contexts. */
-export async function copyText(text) {
-  try {
-    if (navigator.clipboard && navigator.clipboard.writeText) {
-      await navigator.clipboard.writeText(text);
-      return true;
-    }
-  } catch {
-    /* fall through to the manual approach */
-  }
+/* How long we are willing to wait for the clipboard before offering the
+   old-fashioned way. In-app browsers (Instagram, some Android WebViews) can
+   leave navigator.clipboard.writeText pending forever when the permission
+   prompt is suppressed — which is exactly the "it gets stuck" everyone means. */
+const CLIPBOARD_TIMEOUT_MS = 1500;
+
+/** The execCommand path: an off-screen textarea we select and copy. */
+function copyViaExecCommand(text) {
   try {
     const helper = document.createElement('textarea');
     helper.value = text;
     helper.setAttribute('readonly', 'readonly');
-    helper.style.cssText = 'position:fixed;top:-1000px;opacity:0';
+    /* Not display:none and not width 0 — Safari refuses to copy from a field it
+       considers invisible. Off-screen but real works everywhere. */
+    helper.style.cssText = 'position:fixed;top:0;left:-9999px;opacity:0;pointer-events:none';
     document.body.appendChild(helper);
     helper.select();
     helper.setSelectionRange(0, 99999);
@@ -208,4 +227,42 @@ export async function copyText(text) {
   } catch {
     return false;
   }
+}
+
+/**
+ * Copy text to the clipboard. Resolves `true` if it worked, `false` if the
+ * caller should show a select-this-yourself fallback.
+ *
+ * Guarantees it settles: the async clipboard API is raced against a timeout, so
+ * a copy button can never leave the interface waiting on a promise that a
+ * browser has quietly abandoned.
+ */
+export function copyText(text) {
+  if (typeof navigator === 'undefined' || typeof document === 'undefined') {
+    return Promise.resolve(false);
+  }
+
+  const modern = (() => {
+    try {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        return Promise.resolve(navigator.clipboard.writeText(text)).then(
+          () => true,
+          () => false,
+        );
+      }
+    } catch {
+      /* fall through */
+    }
+    return Promise.resolve(false);
+  })();
+
+  let timer = null;
+  const timeout = new Promise((resolve) => {
+    timer = setTimeout(() => resolve(false), CLIPBOARD_TIMEOUT_MS);
+  });
+
+  return Promise.race([modern, timeout])
+    .then((ok) => (ok ? true : copyViaExecCommand(text)))
+    .catch(() => copyViaExecCommand(text))
+    .finally(() => clearTimeout(timer));
 }

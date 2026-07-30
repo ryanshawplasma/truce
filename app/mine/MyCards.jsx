@@ -6,6 +6,7 @@ import { Sticker } from '@/app/components/stickers';
 import { copyText } from '@/app/components/ui';
 import { readMyCards, storageAvailable } from '@/lib/mycards';
 import { relativeTime } from '@/lib/format';
+import { isSealed } from '@/lib/constants';
 
 /**
  * The list of cards this device remembers.
@@ -89,17 +90,27 @@ export default function MyCards() {
 function MyCardRow({ card, origin }) {
   const [state, setState] = useState('');
   const cardUrl = `${origin}/c/${card.id}`;
+  const sealed = isSealed(card.unlockAt);
 
-  const onCopy = async () => {
-    const ok = await copyText(cardUrl);
-    setState(ok ? 'Copied 🤍' : 'Could not copy — open the link and copy it from the address bar.');
-    setTimeout(() => setState(''), 2600);
+  /* Fire-and-forget: the handler never awaits, and copyText always settles. */
+  const onCopy = () => {
+    copyText(cardUrl).then((ok) => {
+      setState(ok ? 'Copied 🤍' : 'Could not copy — open the link and copy it from the address bar.');
+      window.setTimeout(() => setState(''), 3200);
+    });
   };
 
   return (
     <li className="mycard">
       <div className="mycard__main">
-        <p className="mycard__to">To {card.toName || 'someone'}</p>
+        <p className="mycard__to">
+          To {card.toName || 'someone'}
+          {sealed ? (
+            <span className="mycard__badge" title="Sealed until its date">
+              🕰️ Sealed
+            </span>
+          ) : null}
+        </p>
         <p className="mycard__when">{relativeTime(card.createdAt) || 'just now'}</p>
       </div>
 

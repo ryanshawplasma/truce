@@ -17,7 +17,12 @@ export function useMaker() {
   return useContext(MakerContext);
 }
 
-export default function MakerProvider({ children }) {
+/**
+ * `dbEnabled` is passed down from the server page. The wizard cannot read
+ * server env vars itself, and the key must never be exposed with a
+ * NEXT_PUBLIC_ prefix — so the server simply tells it yes or no.
+ */
+export default function MakerProvider({ children, dbEnabled = false }) {
   const [isOpen, setIsOpen] = useState(false);
 
   const open = useCallback(() => setIsOpen(true), []);
@@ -36,7 +41,7 @@ export default function MakerProvider({ children }) {
       <div id="app-landing" className={isOpen ? 'hidden' : undefined}>
         {children}
       </div>
-      {isOpen ? <Wizard onClose={close} /> : null}
+      {isOpen ? <Wizard onClose={close} dbEnabled={dbEnabled} /> : null}
     </MakerContext.Provider>
   );
 }

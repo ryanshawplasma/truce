@@ -588,7 +588,8 @@ ul{margin:0;padding:0;list-style:none}
 .msg-empty{padding:26px 16px;text-align:center;color:var(--plum-soft);font-weight:600}
 
 .themes{display:grid;gap:13px;grid-template-columns:repeat(2,1fr)}
-@media (min-width:640px){.themes{grid-template-columns:repeat(4,1fr)}}
+@media (min-width:520px){.themes{grid-template-columns:repeat(3,1fr)}}
+@media (min-width:760px){.themes{grid-template-columns:repeat(6,1fr)}}
 .theme-opt{
   border:2px solid var(--line);border-radius:var(--r-lg);overflow:hidden;background:#fff;
   box-shadow:var(--sh-xs);transition:all .22s var(--ease);position:relative;
@@ -652,12 +653,33 @@ ul{margin:0;padding:0;list-style:none}
 
 /* ---------- 7. Card experience -------------------------------------------- */
 /* Theme variable sets. Applied to .cardapp via [data-theme]. */
+/* Paper grain tiles + the wavy silhouette used for the deckled paper edge.
+   Two grains: dark specks for pale paper, light specks for dark paper. */
+:root{
+  --grain-dark:url("data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20width='140'%20height='140'%3E%3Cfilter%20id='g'%3E%3CfeTurbulence%20type='fractalNoise'%20baseFrequency='1.05'%20numOctaves='3'%20stitchTiles='stitch'/%3E%3CfeColorMatrix%20type='matrix'%20values='0%200%200%200%200%20%200%200%200%200%200%20%200%200%200%200%200%20%201%200%200%200%200'/%3E%3C/filter%3E%3Crect%20width='140'%20height='140'%20filter='url(%23g)'%20opacity='.07'/%3E%3C/svg%3E");
+  --grain-light:url("data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20width='140'%20height='140'%3E%3Cfilter%20id='g'%3E%3CfeTurbulence%20type='fractalNoise'%20baseFrequency='1.05'%20numOctaves='3'%20stitchTiles='stitch'/%3E%3CfeColorMatrix%20type='matrix'%20values='0%200%200%200%201%20%200%200%200%200%201%20%200%200%200%200%201%20%201%200%200%200%200'/%3E%3C/filter%3E%3Crect%20width='140'%20height='140'%20filter='url(%23g)'%20opacity='.11'/%3E%3C/svg%3E");
+  --deckle-mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='64' height='8'%3E%3Cpath d='M0 8V4.6c5-3.4 9-1 13 .8s8 2.2 12-.6 8-4 12-1.4 8 3.6 13 .4V8Z' fill='%23000'/%3E%3C/svg%3E");
+}
+
 .themed{
   --t-bg:linear-gradient(165deg,#FFF1F4 0%,#FFE2E9 55%,#FFD9CC 100%);
   --t-ink:#3D2137;
   --t-ink-soft:#7B5C73;
-  --t-paper:#FFFFFF;
+  --t-paper:#FFFDFB;
   --t-paper-edge:rgba(61,33,55,.09);
+  /* Ink measured against the PAPER rather than the background. Themes with a
+     dark background and pale paper (Moonlight) override these two; everything
+     else inherits the page ink and nothing changes. */
+  --t-paper-ink:var(--t-ink);
+  --t-paper-ink-soft:var(--t-ink-soft);
+  /* Accent used ON the background (meter, footer link) — bright enough to read
+     on a dark theme, where the paper accent has to stay dark. */
+  --t-accent-bg:var(--t-accent);
+  /* Paper texture. The grain is a tiny tiled SVG noise; light papers take the
+     dark grain, dark papers (Midnight) take the light one. See `.letter`. */
+  --t-grain:var(--grain-dark);
+  /* The soft fibres along the torn top edge of the sheet. */
+  --t-deckle:var(--t-paper);
   --t-accent:#E85D75;
   --t-accent-soft:rgba(232,93,117,.13);
   --t-env:#F7C9D2;
@@ -681,6 +703,7 @@ ul{margin:0;padding:0;list-style:none}
   --t-seal:#F2B880;
   --t-shadow:0 30px 70px rgba(0,0,0,.5);
   --t-heart:#F2B880;
+  --t-grain:var(--grain-light);
 }
 .themed[data-theme="peach"]{
   --t-bg:linear-gradient(165deg,#FFF3E7 0%,#FFDFC6 52%,#FFC9AE 100%);
@@ -701,7 +724,7 @@ ul{margin:0;padding:0;list-style:none}
   --t-bg:linear-gradient(165deg,#F5F0FF 0%,#E7DCFB 55%,#DCD3F7 100%);
   --t-ink:#33265B;
   --t-ink-soft:#6E5F98;
-  --t-paper:#FFFFFF;
+  --t-paper:#FDFCFF;
   --t-paper-edge:rgba(51,38,91,.1);
   --t-accent:#8B6BD6;
   --t-accent-soft:rgba(139,107,214,.14);
@@ -711,6 +734,44 @@ ul{margin:0;padding:0;list-style:none}
   --t-seal:#8B6BD6;
   --t-shadow:0 30px 70px rgba(51,38,91,.18);
   --t-heart:#8B6BD6;
+}
+
+/* Sky Blue — a clear-morning theme: cool light, white paper, one bright blue. */
+.themed[data-theme="sky"]{
+  --t-bg:linear-gradient(165deg,#EAF6FF 0%,#DFF0FF 52%,#D6ECFF 100%);
+  --t-ink:#1F3A5F;
+  --t-ink-soft:#5A7699;
+  --t-paper:#FDFEFF;
+  --t-paper-edge:rgba(31,58,95,.11);
+  --t-accent:#3C7FC7;
+  --t-accent-soft:rgba(74,144,217,.14);
+  --t-env:#BEDDF6;
+  --t-env-flap:#D5EBFB;
+  --t-env-front:#A8CFF0;
+  --t-seal:#4A90D9;
+  --t-shadow:0 30px 70px rgba(31,58,95,.16);
+  --t-heart:#4A90D9;
+}
+
+/* Moonlight — a deep navy night with silver light and PALE paper. This is the
+   theme the --t-paper-ink pair exists for: the page is dark, the letter is not. */
+.themed[data-theme="moonlight"]{
+  --t-bg:linear-gradient(165deg,#0E1530 0%,#1A2244 52%,#2A2F58 100%);
+  --t-ink:#EDF2FF;
+  --t-ink-soft:#A7B4DA;
+  --t-paper:#F7F9FF;
+  --t-paper-edge:rgba(32,43,78,.13);
+  --t-paper-ink:#202B4E;
+  --t-paper-ink-soft:#5A6791;
+  --t-accent:#4F61A8;
+  --t-accent-bg:#AEBCEE;
+  --t-accent-soft:rgba(120,140,215,.16);
+  --t-env:#26315C;
+  --t-env-flap:#2F3B6C;
+  --t-env-front:#1F294F;
+  --t-seal:#7C8CD0;
+  --t-shadow:0 30px 70px rgba(0,0,0,.55);
+  --t-heart:#AEBCEE;
 }
 
 .cardapp{
@@ -772,7 +833,7 @@ ul{margin:0;padding:0;list-style:none}
   padding:14px;
 }
 .env__letter span{
-  font-family:var(--font-display);font-size:.9rem;color:var(--t-ink-soft);opacity:.65;
+  font-family:var(--font-display);font-size:.9rem;color:var(--t-paper-ink-soft);opacity:.7;
 }
 .env__flap{
   position:absolute;top:0;left:0;right:0;height:58%;
@@ -816,7 +877,7 @@ ul{margin:0;padding:0;list-style:none}
 .env.is-done .env__seal{z-index:0}
 .tap-hint{
   display:inline-flex;align-items:center;gap:8px;font-weight:800;font-size:.94rem;
-  color:var(--t-ink);background:var(--t-paper);
+  color:var(--t-paper-ink);background:var(--t-paper);
   padding:13px 24px;border-radius:var(--r-pill);
   box-shadow:0 8px 22px rgba(0,0,0,.12);border:1px solid var(--t-paper-edge);
   animation:nudge 2.2s var(--ease) infinite;
@@ -825,12 +886,45 @@ ul{margin:0;padding:0;list-style:none}
 
 /* Scene 2 — the letter */
 .letter{
-  width:min(560px,100%);background:var(--t-paper);
+  width:min(560px,100%);
+  color:var(--t-paper-ink);
   border:1px solid var(--t-paper-edge);
   border-radius:var(--r-xl);
   padding:clamp(28px,6vw,46px) clamp(22px,5vw,44px);
-  box-shadow:var(--t-shadow);text-align:left;position:relative;
+  text-align:left;position:relative;
   animation:letterUp .8s var(--ease) both;
+
+  /* Premium paper, in three layers painted behind the words:
+       1. the grain (a tiled noise tile, tinted by the theme)
+       2. a whisper of warmth in the top-left, like light falling on a sheet
+       3. the paper colour itself
+     Background layers sit under the content, so nothing here can ever cover
+     the letter the way an absolutely-positioned overlay would. */
+  background-image:
+    var(--t-grain),
+    radial-gradient(120% 90% at 12% 0%, rgba(255,255,255,.42) 0%, rgba(255,255,255,0) 60%);
+  background-size:140px 140px, 100% 100%;
+  background-repeat:repeat, no-repeat;
+  background-color:var(--t-paper);
+
+  /* Layered shadow: a hairline contact shadow, a close soft one, then the big
+     theme shadow. Reads as a real sheet resting on the page. */
+  box-shadow:
+    0 1px 1px rgba(0,0,0,.05),
+    0 8px 16px -10px rgba(0,0,0,.16),
+    var(--t-shadow);
+}
+/* A soft deckled top edge — little paper fibres standing above the straight
+   line of the sheet. Inset past the rounded corners so the silhouette stays
+   clean, and non-interactive so it never eats a tap. */
+.letter::before{
+  content:"";position:absolute;left:26px;right:26px;top:-6px;height:8px;
+  background:var(--t-deckle);
+  pointer-events:none;
+  -webkit-mask-image:var(--deckle-mask);mask-image:var(--deckle-mask);
+  -webkit-mask-size:64px 8px;mask-size:64px 8px;
+  -webkit-mask-repeat:repeat-x;mask-repeat:repeat-x;
+  opacity:.9;
 }
 @keyframes letterUp{from{opacity:0;transform:translateY(56px) scale(.96)}to{opacity:1;transform:none}}
 .letter::after{
@@ -845,7 +939,7 @@ ul{margin:0;padding:0;list-style:none}
 .letter__dear{font-family:var(--font-display);font-size:clamp(1.4rem,4.4vw,1.85rem);margin:0 0 14px;font-weight:600}
 .letter__msg{
   font-size:clamp(1.02rem,2.5vw,1.13rem);line-height:1.75;white-space:pre-wrap;
-  margin:0;min-height:3em;color:var(--t-ink);
+  margin:0;min-height:3em;color:var(--t-paper-ink);
 }
 .caret{
   display:inline-block;width:2px;height:1.05em;background:var(--t-accent);
@@ -853,7 +947,7 @@ ul{margin:0;padding:0;list-style:none}
 }
 @keyframes blink{50%{opacity:0}}
 .skip-typing{
-  margin-top:14px;font-size:.8rem;font-weight:800;color:var(--t-ink-soft);
+  margin-top:14px;font-size:.8rem;font-weight:800;color:var(--t-paper-ink-soft);
   letter-spacing:.06em;text-transform:uppercase;opacity:.8;
 }
 .skip-typing:hover{color:var(--t-accent)}
@@ -869,7 +963,7 @@ ul{margin:0;padding:0;list-style:none}
 .promise-box p{margin:0;font-size:1rem;line-height:1.6}
 .memory-line{
   font-family:var(--font-display);font-style:italic;font-size:1.04rem;line-height:1.6;
-  color:var(--t-ink-soft);border-left:3px solid var(--t-accent);padding-left:15px;
+  color:var(--t-paper-ink-soft);border-left:3px solid var(--t-accent);padding-left:15px;
   animation:riseIn .55s var(--ease) both .1s;
 }
 .letter__sign{
@@ -895,7 +989,7 @@ ul{margin:0;padding:0;list-style:none}
 }
 .btn-yes:hover{transform:translateY(-3px) scale(1.03)}
 .btn-no{
-  background:var(--t-paper);color:var(--t-ink);
+  background:var(--t-paper);color:var(--t-paper-ink);
   border:2px solid var(--t-paper-edge);
   padding:16px 30px;border-radius:var(--r-pill);
   font-weight:800;font-size:1.05rem;box-shadow:0 8px 18px rgba(0,0,0,.1);
@@ -919,10 +1013,10 @@ ul{margin:0;padding:0;list-style:none}
   color:var(--t-ink-soft);
 }
 .cardapp__foot a{
-  font-weight:800;color:var(--t-ink);border-bottom:1.5px solid var(--t-accent);
+  font-weight:800;color:var(--t-ink);border-bottom:1.5px solid var(--t-accent-bg);
   padding-bottom:1px;transition:color .2s var(--ease);
 }
-.cardapp__foot a:hover{color:var(--t-accent)}
+.cardapp__foot a:hover{color:var(--t-accent-bg)}
 
 /* ---------- 8. Hearts ------------------------------------------------------ */
 .heart-layer{position:absolute;inset:0;overflow:hidden;pointer-events:none;z-index:1}
@@ -1272,7 +1366,7 @@ ul{margin:0;padding:0;list-style:none}
 }
 /* On the card the tray sits on a themed background, so the tabs follow it. */
 .tray .pack-tab{
-  background:var(--t-paper);border-color:var(--t-paper-edge);color:var(--t-ink-soft);
+  background:var(--t-paper);border-color:var(--t-paper-edge);color:var(--t-paper-ink-soft);
 }
 .tray .pack-tab[aria-selected="true"]{
   background:var(--t-accent);border-color:var(--t-accent);color:#fff;
@@ -1523,7 +1617,7 @@ ul{margin:0;padding:0;list-style:none}
   font-style:italic;
   font-size:.94rem;
   line-height:1.5;
-  color:var(--t-ink-soft);
+  color:var(--t-paper-ink-soft);
   opacity:.85;
   animation:riseIn .5s var(--ease) both;
 }
@@ -1592,14 +1686,14 @@ ul{margin:0;padding:0;list-style:none}
   font-size:.68rem;font-weight:800;letter-spacing:.15em;text-transform:uppercase;
   color:var(--t-ink-soft);
 }
-.meter__label{font-size:.88rem;font-weight:800;color:var(--t-accent)}
+.meter__label{font-size:.88rem;font-weight:800;color:var(--t-accent-bg)}
 .meter__track{
   position:relative;height:12px;border-radius:var(--r-pill);
   background:var(--t-accent-soft);border:1px solid var(--t-paper-edge);
 }
 .meter__fill{
   position:absolute;left:0;top:0;bottom:0;border-radius:var(--r-pill);
-  background:linear-gradient(90deg,var(--t-accent),var(--t-seal));
+  background:linear-gradient(90deg,var(--t-accent-bg),var(--t-seal));
   transition:width .75s var(--ease-out-back);
 }
 .meter__heart{
@@ -1844,4 +1938,532 @@ ul{margin:0;padding:0;list-style:none}
 
 @media (prefers-reduced-motion:reduce){
   .mycards__mascot{animation:none !important}
+}
+
+
+/* ==========================================================================
+   Time-capsule letters — the sealed screen at /c/<id> before its moment
+   ========================================================================== */
+.sealed-flag{
+  display:inline-flex;align-items:center;gap:8px;
+  font-size:.74rem;font-weight:800;letter-spacing:.13em;text-transform:uppercase;
+  color:var(--t-accent-bg);
+  background:var(--t-accent-soft);
+  border:1px solid var(--t-accent-soft);
+  padding:7px 15px;border-radius:var(--r-pill);margin-bottom:16px;
+}
+/* A slower, sleepier version of the idle wiggle — it is waiting, not asking. */
+.env-idle--sealed{animation:envSealedIdle 7s ease-in-out infinite}
+@keyframes envSealedIdle{
+  0%,100%{transform:rotate(0deg)}
+  46%{transform:rotate(-1.4deg)}
+  74%{transform:rotate(1.1deg)}
+}
+/* Nothing about a sealed envelope invites a tap, so it does not breathe. */
+.env--sealed{animation:none;cursor:default}
+.env__seal--clock svg{width:30px;height:30px;color:#fff;opacity:.95}
+
+.countdown{
+  display:grid;grid-template-columns:repeat(4,1fr);gap:8px;
+  width:min(360px,86vw);margin:6px 0 22px;
+}
+.countdown__cell{
+  display:flex;flex-direction:column;align-items:center;gap:2px;
+  background:var(--t-paper);border:1px solid var(--t-paper-edge);
+  border-radius:var(--r-sm);padding:11px 4px 9px;
+  box-shadow:0 6px 16px rgba(0,0,0,.10);
+}
+.countdown__cell b{
+  font-family:var(--font-display);font-size:clamp(1.25rem,6vw,1.6rem);
+  line-height:1;color:var(--t-paper-ink);font-variant-numeric:tabular-nums;
+}
+.countdown__cell small{
+  font-size:.64rem;font-weight:800;letter-spacing:.1em;text-transform:uppercase;
+  color:var(--t-paper-ink-soft);
+}
+.sealed-note{
+  max-width:400px;font-size:.9rem;color:var(--t-ink-soft);margin:0;
+}
+
+@media (prefers-reduced-motion:reduce){
+  .env-idle--sealed{animation:none !important}
+}
+
+
+/* ==========================================================================
+   Wizard additions — suggested stickers, the seal-until switch, copy fallback
+   ========================================================================== */
+
+/* ---- Suggested stickers -------------------------------------------------- */
+.suggest{
+  background:linear-gradient(140deg,rgba(255,228,233,.55),rgba(255,224,204,.45));
+  border:1px solid rgba(232,93,117,.18);
+  border-radius:var(--r-lg);
+  padding:14px 14px 12px;margin:0 0 18px;
+}
+.suggest__label{
+  margin:0 0 10px;font-size:.74rem;font-weight:800;letter-spacing:.12em;
+  text-transform:uppercase;color:var(--rose-deep);
+}
+.suggest__row{display:grid;grid-template-columns:repeat(3,1fr);gap:9px}
+.suggest__pick{
+  display:flex;flex-direction:column;align-items:center;gap:6px;
+  background:#fff;border:2px solid var(--line);border-radius:var(--r);
+  padding:10px 6px 9px;box-shadow:var(--sh-xs);
+  transition:transform .2s var(--ease),border-color .2s var(--ease),box-shadow .2s var(--ease);
+}
+.suggest__pick:hover{transform:translateY(-3px);border-color:rgba(232,93,117,.45)}
+.suggest__pick.is-on{border-color:var(--rose);background:#FFF4F6;box-shadow:0 0 0 3px rgba(232,93,117,.13)}
+.suggest__pick[disabled]{opacity:.45;cursor:not-allowed;transform:none}
+.suggest__name{
+  font-size:.72rem;font-weight:800;line-height:1.2;text-align:center;color:var(--plum-mid);
+}
+
+/* ---- "Seal until a special date" ---------------------------------------- */
+.capsule{
+  border:2px solid var(--line);border-radius:var(--r-lg);
+  padding:14px 16px;margin:18px 0 16px;background:#fff;
+  transition:border-color .2s var(--ease),background .2s var(--ease);
+}
+.capsule.is-on{border-color:rgba(232,93,117,.45);background:#FFF9FA}
+.capsule__switch{display:flex;align-items:flex-start;gap:12px;cursor:pointer}
+.capsule__switch input{
+  position:absolute;opacity:0;width:1px;height:1px;
+}
+.capsule__track{
+  flex:0 0 46px;width:46px;height:27px;border-radius:var(--r-pill);
+  background:var(--line-strong);position:relative;margin-top:2px;
+  transition:background .22s var(--ease);
+}
+.capsule__track::after{
+  content:"";position:absolute;top:3px;left:3px;width:21px;height:21px;border-radius:50%;
+  background:#fff;box-shadow:0 2px 5px rgba(61,33,55,.28);
+  transition:transform .22s var(--ease);
+}
+.capsule__switch input:checked + .capsule__track{background:var(--rose)}
+.capsule__switch input:checked + .capsule__track::after{transform:translateX(19px)}
+.capsule__switch input:focus-visible + .capsule__track{outline:3px solid var(--rose);outline-offset:3px}
+.capsule__text{display:flex;flex-direction:column;gap:2px;min-width:0}
+.capsule__text b{font-size:.98rem}
+.capsule__text small{font-size:.83rem;color:var(--plum-soft);font-weight:600;line-height:1.4}
+.capsule__when{margin-top:14px}
+.capsule__when label{
+  display:block;font-weight:800;font-size:.86rem;margin-bottom:6px;
+}
+.capsule__when .input{max-width:100%}
+.capsule-note{
+  background:rgba(242,184,128,.14);border:1px solid rgba(226,154,87,.26);
+  border-radius:var(--r-sm);padding:12px 14px;font-size:.85rem;color:#7E5327;
+  font-weight:600;margin:18px 0 16px;line-height:1.5;
+}
+.sealed-receipt{
+  background:rgba(139,107,214,.12);border:1px solid rgba(139,107,214,.26);
+  border-radius:var(--r-sm);padding:12px 15px;font-size:.88rem;color:#4B3A7A;
+  font-weight:700;margin:0 0 6px;text-align:left;
+}
+
+/* ---- Copy fallback ------------------------------------------------------- */
+/* Nothing here may scroll sideways on a 390px screen: the input shrinks, the
+   text ellipsises, and the row wraps rather than pushing the button off. */
+.linkbox{max-width:100%;overflow:hidden}
+.linkbox input{
+  min-width:0;width:100%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+}
+.linkbox .btn{flex:0 0 auto;white-space:nowrap}
+.linkbox.is-manual{border-color:rgba(226,154,87,.65);background:#FFFCF6}
+.copy-state{word-break:break-word}
+
+/* ---- /mine sealed badge -------------------------------------------------- */
+.mycard__badge{
+  display:inline-block;margin-left:8px;vertical-align:middle;
+  font-size:.66rem;font-weight:800;letter-spacing:.06em;
+  background:rgba(139,107,214,.16);color:#5B4795;
+  padding:3px 9px;border-radius:var(--r-pill);
+}
+
+
+/* ==========================================================================
+   Our corner — the private room for two (/couple and /couple/room)
+   ========================================================================== */
+
+/* ---- The door ------------------------------------------------------------ */
+.corner-flag{
+  display:inline-flex;align-items:center;gap:8px;
+  font-size:.74rem;font-weight:800;letter-spacing:.13em;text-transform:uppercase;
+  color:#3E6BA8;background:rgba(74,144,217,.13);border:1px solid rgba(74,144,217,.22);
+  padding:7px 15px;border-radius:var(--r-pill);margin-bottom:14px;
+}
+.corner-intro h1{font-size:clamp(1.7rem,5.4vw,2.4rem);margin-bottom:10px}
+.corner-points{display:grid;gap:12px;margin:20px 0 4px}
+.corner-points li{
+  position:relative;padding-left:20px;font-size:.96rem;color:var(--plum-mid);line-height:1.55;
+}
+.corner-points li::before{
+  content:"";position:absolute;left:0;top:.62em;width:8px;height:8px;border-radius:50%;
+  background:linear-gradient(140deg,#4A90D9,#8B6BD6);
+}
+.corner-points b{color:var(--plum)}
+.corner-honest{
+  margin-top:20px;background:rgba(242,184,128,.14);border:1px solid rgba(226,154,87,.28);
+  border-radius:var(--r-sm);padding:14px 16px;font-size:.88rem;color:#7E5327;line-height:1.55;
+}
+.corner-honest b{color:#6A431E}
+
+.corner-tabs{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:22px}
+.corner-tab{
+  padding:12px 10px;border-radius:var(--r-pill);font-weight:800;font-size:.94rem;
+  background:#fff;border:2px solid var(--line);color:var(--plum-mid);
+  transition:all .2s var(--ease);
+}
+.corner-tab:hover{border-color:rgba(74,144,217,.5);color:var(--plum)}
+.corner-tab.is-on{background:var(--plum);border-color:var(--plum);color:#fff;box-shadow:var(--sh-sm)}
+.corner-form h2{margin-bottom:4px}
+.corner-legend{display:block;font-weight:800;font-size:.92rem;margin-bottom:7px}
+.corner-sides{display:grid;gap:9px;grid-template-columns:1fr}
+@media (min-width:480px){.corner-sides{grid-template-columns:1fr 1fr}}
+.corner-side{
+  text-align:left;background:#fff;border:2px solid var(--line);border-radius:var(--r);
+  padding:13px 15px;display:flex;flex-direction:column;gap:2px;
+  transition:all .2s var(--ease);
+}
+.corner-side:hover{border-color:rgba(74,144,217,.5)}
+.corner-side.is-on{border-color:#4A90D9;background:#F3F9FF;box-shadow:0 0 0 3px rgba(74,144,217,.13)}
+.corner-side b{font-size:.94rem}
+.corner-side small{font-size:.8rem;color:var(--plum-soft);font-weight:600}
+
+/* ---- The room ------------------------------------------------------------ */
+.corner{
+  /* dvh so an on-screen keyboard cannot push the composer off the bottom */
+  height:100dvh;min-height:100svh;
+  display:flex;flex-direction:column;
+  background:linear-gradient(180deg,#F4F8FF 0%,#FFF7F2 62%);
+}
+.corner__head{
+  flex:0 0 auto;display:flex;align-items:center;gap:12px;
+  padding:12px var(--pad);
+  background:rgba(255,255,255,.86);
+  backdrop-filter:saturate(150%) blur(12px);
+  -webkit-backdrop-filter:saturate(150%) blur(12px);
+  border-bottom:1px solid var(--line);
+}
+.corner__title{display:flex;flex-direction:column;min-width:0;flex:1}
+.corner__name{
+  font-family:var(--font-display);font-weight:700;font-size:1.12rem;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+}
+.corner__days{font-size:.78rem;font-weight:700;color:#3E6BA8}
+
+.corner__list{
+  flex:1;min-height:0;overflow-y:auto;overscroll-behavior:contain;
+  display:flex;flex-direction:column;gap:8px;
+  padding:18px var(--pad) 10px;
+  -webkit-overflow-scrolling:touch;
+}
+/* Messages sit at the BOTTOM of the pane, the way every chat does. A spacer
+   that soaks up the free space is the safe way to do it — `justify-content:
+   flex-end` on a scrolling flex column makes the overflowing top unreachable in
+   some browsers. */
+.corner__list::before{content:"";margin-top:auto}
+.corner__loading{margin:auto;color:var(--plum-soft);font-weight:700;font-size:.92rem}
+.corner__date{
+  align-self:center;margin:10px 0 4px;
+  font-size:.72rem;font-weight:800;letter-spacing:.1em;text-transform:uppercase;
+  color:var(--plum-soft);background:rgba(255,255,255,.75);
+  border:1px solid var(--line);padding:5px 13px;border-radius:var(--r-pill);
+}
+.corner__empty{
+  margin:auto;text-align:center;max-width:320px;padding:20px 0;
+}
+.corner__empty span{font-size:2.6rem;line-height:1;display:block;margin-bottom:10px}
+.corner__empty h2{font-size:1.3rem;margin-bottom:6px}
+.corner__empty p{color:var(--plum-mid);font-size:.94rem;margin:0}
+
+.bubble{
+  align-self:flex-start;max-width:min(78%,440px);
+  background:#fff;border:1px solid var(--line);
+  border-radius:18px 18px 18px 6px;
+  padding:10px 14px 7px;
+  box-shadow:var(--sh-xs);
+  animation:bubbleIn .28s var(--ease) both;
+}
+.bubble--mine{
+  align-self:flex-end;
+  background:linear-gradient(135deg,var(--rose) 0%,#F0798C 100%);
+  border-color:transparent;color:#fff;
+  border-radius:18px 18px 6px 18px;
+  box-shadow:0 8px 18px rgba(232,93,117,.22);
+}
+.bubble.is-pending{opacity:.6}
+.bubble__body{
+  margin:0;font-size:.98rem;line-height:1.5;
+  white-space:pre-wrap;overflow-wrap:anywhere;
+}
+.bubble__time{
+  display:block;margin-top:3px;text-align:right;
+  font-size:.66rem;font-weight:700;color:var(--plum-soft);
+}
+.bubble--mine .bubble__time{color:rgba(255,255,255,.8)}
+@keyframes bubbleIn{from{opacity:0;transform:translateY(8px) scale(.98)}to{opacity:1;transform:none}}
+
+.corner__compose{
+  flex:0 0 auto;display:flex;gap:9px;align-items:flex-end;
+  padding:10px var(--pad) calc(10px + env(safe-area-inset-bottom,0px));
+  background:rgba(255,255,255,.92);
+  backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);
+  border-top:1px solid var(--line);
+}
+.corner__input{
+  flex:1;min-width:0;resize:none;max-height:140px;
+  background:#fff;border:2px solid var(--line);border-radius:20px;
+  padding:11px 15px;font-size:1rem;line-height:1.45;color:var(--plum);
+  transition:border-color .2s var(--ease),box-shadow .2s var(--ease);
+}
+.corner__input:focus{
+  outline:none;border-color:var(--rose);box-shadow:0 0 0 4px rgba(232,93,117,.13);
+}
+.corner__send{
+  flex:0 0 46px;width:46px;height:46px;padding:0;border-radius:50%;
+  font-size:1.2rem;line-height:1;display:grid;place-items:center;
+}
+.corner__note{
+  margin:0;padding:0 var(--pad);min-height:1.2em;font-size:.82rem;font-weight:700;
+  color:var(--rose-deep);text-align:center;
+}
+.corner__foot{
+  margin:0;padding:6px var(--pad) calc(10px + env(safe-area-inset-bottom,0px));
+  text-align:center;font-size:.72rem;color:var(--plum-soft);
+}
+.corner__foot a{font-weight:800;color:var(--plum-mid)}
+
+/* ---- The landing-page section ------------------------------------------- */
+.corner-promo{
+  display:grid;gap:22px;align-items:center;
+  border-radius:var(--r-xl);
+  padding:clamp(26px,5vw,44px);
+  background:linear-gradient(140deg,#EEF5FF 0%,#F6F0FF 55%,#FFF1F4 100%);
+  border:1px solid rgba(74,144,217,.16);
+  box-shadow:var(--sh-sm);
+}
+@media (min-width:860px){.corner-promo{grid-template-columns:1.15fr .85fr}}
+.corner-promo h2{margin-bottom:10px}
+.corner-promo p{color:var(--plum-mid);margin-bottom:0}
+.corner-promo__actions{display:flex;flex-wrap:wrap;gap:11px;margin-top:20px}
+.corner-demo{
+  display:flex;flex-direction:column;gap:8px;
+  background:#fff;border:1px solid var(--line);border-radius:var(--r-lg);
+  padding:16px;box-shadow:var(--sh-md);
+}
+.corner-demo__day{
+  align-self:center;font-size:.68rem;font-weight:800;letter-spacing:.1em;
+  text-transform:uppercase;color:#3E6BA8;margin-bottom:2px;
+}
+.corner-demo .bubble{animation:none;max-width:88%}
+
+@media (prefers-reduced-motion:reduce){
+  .bubble{animation:none !important}
+}
+
+
+/* ==========================================================================
+   Round 5 — beta chips, share rows, the tappable cuteness meter
+   ========================================================================== */
+
+/* ---------- The beta chip ------------------------------------------------ */
+/* Small, quiet, and the same everywhere: Our corner (nav + landing + pages)
+   and the sealed-letter toggle all wear it. */
+.beta-chip{
+  display:inline-flex;align-items:center;gap:5px;
+  font-family:var(--font-body);
+  font-size:.6rem;font-weight:800;letter-spacing:.12em;text-transform:uppercase;
+  line-height:1;white-space:nowrap;vertical-align:middle;
+  color:var(--rose-deep);
+  background:rgba(255,228,233,.9);
+  border:1px solid rgba(232,93,117,.26);
+  padding:4px 8px 4px 7px;border-radius:var(--r-pill);
+}
+.beta-chip__dot{
+  width:5px;height:5px;border-radius:50%;flex:0 0 5px;
+  background:var(--rose);
+  animation:betaPulse 2.6s var(--ease) infinite;
+}
+@keyframes betaPulse{
+  0%,100%{opacity:1;transform:scale(1)}
+  50%{opacity:.45;transform:scale(.8)}
+}
+/* On tinted / dark surfaces. */
+.beta-chip--soft{
+  color:var(--gold);
+  background:rgba(242,184,128,.14);
+  border-color:rgba(242,184,128,.3);
+}
+.beta-chip--soft .beta-chip__dot{background:var(--gold)}
+
+/* In the nav the chip rides beside the link text. */
+.nav__links a .beta-chip,
+.nav__drawer a .beta-chip{margin-left:7px}
+/* Inside the eyebrow pill on the landing section. */
+.eyebrow .beta-chip{margin-left:8px}
+/* Beside the sealed-letter switch label. */
+.capsule__text .beta-chip{margin-left:7px}
+
+/* ---------- Share rows --------------------------------------------------- */
+/* Used twice: the sender's success screen and the recipient's reply row. */
+.sharerow{margin:22px 0 0;text-align:left}
+.sharerow__label{
+  margin:0 0 11px;font-family:var(--font-body);
+  font-size:.72rem;font-weight:800;letter-spacing:.13em;text-transform:uppercase;
+  color:var(--plum-soft);
+}
+.sharerow__row{display:flex;flex-wrap:wrap;gap:9px}
+.sharerow__hint{
+  margin:11px 0 0;font-size:.82rem;line-height:1.55;font-weight:600;color:var(--plum-soft);
+}
+
+.share-btn{
+  flex:1 1 82px;min-width:82px;max-width:140px;
+  display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;
+  min-height:66px;padding:11px 8px;
+  background:#fff;border:1.5px solid var(--line);border-radius:var(--r-sm);
+  color:var(--plum);font-weight:800;font-size:.76rem;line-height:1.2;text-align:center;
+  box-shadow:var(--sh-xs);cursor:pointer;
+  transition:transform .2s var(--ease),border-color .2s var(--ease),box-shadow .2s var(--ease);
+  -webkit-tap-highlight-color:transparent;
+}
+.share-btn:hover{transform:translateY(-2px);box-shadow:var(--sh-sm);border-color:rgba(232,93,117,.34)}
+.share-btn:active{transform:translateY(0) scale(.98)}
+.share-btn__glyph{display:block;width:24px;height:24px}
+.share-btn__glyph svg{display:block;width:24px;height:24px}
+.share-btn__name{display:block;overflow-wrap:anywhere}
+
+/* A hint of each service's colour, on our own paper. */
+.share-btn--native .share-btn__glyph{color:var(--plum)}
+.share-btn--whatsapp .share-btn__glyph{color:#1FA855}
+.share-btn--telegram .share-btn__glyph{color:#2AA2DF}
+.share-btn--sms .share-btn__glyph{color:#3B9E45}
+.share-btn--instagram .share-btn__glyph{color:#C9337D}
+.share-btn--copy .share-btn__glyph{color:var(--rose)}
+
+/* Narrow phones: three across, still a comfortable 44px+ target. */
+@media (max-width:420px){
+  /* Exactly three across, and a leftover button keeps that same width instead
+     of stretching to fill the row on its own. */
+  .share-btn{
+    flex:1 1 calc(33.333% - 6px);
+    min-width:0;max-width:calc(33.333% - 6px);
+    font-size:.72rem;
+  }
+}
+
+/* The same row on the card, where the palette comes from the theme. */
+.cardapp .sharerow{
+  width:min(560px,100%);margin-inline:auto;text-align:center;
+}
+.cardapp .sharerow__label{color:var(--t-ink-soft)}
+.cardapp .sharerow__hint{color:var(--t-ink-soft);opacity:.9}
+.cardapp .sharerow__row{justify-content:center}
+.cardapp .share-btn{
+  background:var(--t-paper);border-color:var(--t-paper-edge);color:var(--t-paper-ink);
+  box-shadow:0 6px 16px rgba(0,0,0,.09);
+}
+.cardapp .share-btn:hover{border-color:var(--t-accent)}
+.cardapp .share-btn--native .share-btn__glyph{color:var(--t-accent)}
+.cardapp .share-btn--copy .share-btn__glyph{color:var(--t-accent)}
+
+/* The reply row gets a little more presence than a plain strip. */
+.replyback{
+  width:min(560px,100%);margin:clamp(18px,4vw,26px) auto 0;
+  padding:clamp(16px,4vw,22px);
+  background:var(--t-accent-soft);
+  border:1px solid var(--t-paper-edge);
+  border-radius:var(--r-lg);
+  animation:riseIn .5s var(--ease) both;
+}
+.replyback .sharerow{margin-top:0}
+.replyback__title{
+  margin:0 0 4px;font-family:var(--font-display);font-weight:600;
+  font-size:clamp(1.1rem,3.4vw,1.3rem);color:var(--t-ink);text-align:center;
+}
+.replyback__sub{
+  margin:0 0 6px;font-size:.88rem;font-weight:600;color:var(--t-ink-soft);text-align:center;
+}
+
+/* ---------- The cuteness meter on the card (tappable) -------------------- */
+.cutetap{
+  display:block;width:100%;text-align:left;
+  margin:22px 0 0;padding:13px 15px;
+  background:var(--t-accent-soft);
+  border:1.5px solid var(--t-paper-edge);
+  border-radius:var(--r);
+  cursor:pointer;-webkit-tap-highlight-color:transparent;
+  transition:transform .16s var(--ease),border-color .25s var(--ease),box-shadow .25s var(--ease);
+  animation:riseIn .5s var(--ease) both;
+}
+.cutetap:hover{border-color:var(--t-accent)}
+.cutetap:active{transform:scale(.985)}
+.cutetap__head{display:flex;justify-content:space-between;align-items:baseline;gap:10px;margin-bottom:8px}
+.cutetap__title{
+  font-size:.64rem;font-weight:800;letter-spacing:.15em;text-transform:uppercase;
+  color:var(--t-ink-soft);
+}
+.cutetap__label{font-size:.84rem;font-weight:800;color:var(--t-accent-bg)}
+.cutetap__track{
+  display:block;position:relative;height:9px;border-radius:var(--r-pill);
+  background:var(--t-paper);border:1px solid var(--t-paper-edge);overflow:hidden;
+}
+.cutetap__fill{
+  display:block;height:100%;border-radius:var(--r-pill);
+  background:linear-gradient(90deg,var(--t-accent-bg),var(--t-seal));
+  transition:width .5s var(--ease-out-back);
+}
+.cutetap__hint{
+  display:block;margin:8px 0 0;font-size:.74rem;font-weight:700;color:var(--t-ink-soft);opacity:.85;
+}
+.cutetap.is-broken{
+  border-color:var(--t-accent);
+  box-shadow:0 0 0 4px var(--t-accent-soft);
+  animation:cuteBreak .55s var(--ease-out-back) both;
+}
+.cutetap.is-broken .cutetap__label{animation:cutePulse 1.6s var(--ease) infinite}
+@keyframes cuteBreak{
+  0%{transform:scale(1) rotate(0deg)}
+  30%{transform:scale(1.03) rotate(-.7deg)}
+  60%{transform:scale(1.01) rotate(.5deg)}
+  100%{transform:scale(1) rotate(0deg)}
+}
+
+/* ---------- The forgiveness meter, loading -------------------------------- */
+/* While it fills we drive the width from JS every frame, so the CSS
+   transition has to get out of the way or it fights the animation. */
+.meter.is-loading .meter__fill,
+.meter.is-loading .meter__heart{transition:none}
+.meter.is-loading .meter__heart{animation:meterThump .5s var(--ease) infinite}
+@keyframes meterThump{
+  0%,100%{transform:translate(-50%,-50%) scale(1)}
+  50%{transform:translate(-50%,-50%) scale(1.28)}
+}
+
+/* The pause between "Yes" and the confetti, where the meter does the talking. */
+.forgive__loading{
+  display:flex;flex-direction:column;align-items:center;gap:10px;
+  padding:18px 0;text-align:center;
+}
+.forgive__loading-heart{font-size:2.4rem;line-height:1;animation:meterThump .9s var(--ease) infinite}
+.forgive__loading p{margin:0;font-weight:800;color:var(--t-ink-soft)}
+/* The forgiveness meter is a screen away up there, so it is mirrored here. */
+.forgive__loading-track{
+  display:block;width:min(260px,72vw);height:10px;border-radius:var(--r-pill);
+  background:var(--t-accent-soft);border:1px solid var(--t-paper-edge);overflow:hidden;
+}
+.forgive__loading-fill{
+  display:block;height:100%;border-radius:var(--r-pill);
+  background:linear-gradient(90deg,var(--t-accent-bg),var(--t-seal));
+}
+
+@media (prefers-reduced-motion:reduce){
+  .beta-chip__dot,
+  .cutetap.is-broken,
+  .cutetap.is-broken .cutetap__label,
+  .meter.is-loading .meter__heart,
+  .forgive__loading-heart{animation:none !important}
+  .share-btn:hover,.cutetap:active{transform:none}
 }

@@ -6,6 +6,7 @@ import { getCardByToken } from '@/lib/cards';
 import { isSupabaseConfigured } from '@/lib/supabase';
 import { siteOrigin } from '@/lib/site';
 import { relativeTime, absoluteTime } from '@/lib/format';
+import { isSealed } from '@/lib/constants';
 
 /**
  * /s/[token] — the sender's private page.
@@ -57,7 +58,7 @@ export default async function SenderPage({ params }) {
           <p className="panel__sub">
             {isSupabaseConfigured()
               ? 'This private link is either mistyped, or the card has already been deleted. Private links are long on purpose — copy the whole thing, including every character after /s/.'
-              : 'This deployment has no database configured yet, so there are no saved cards to look up. Add your Supabase environment variables (see the README) to switch on private links and open-tracking.'}
+              : 'There are no saved cards to look up yet — this site has not been connected to its database, so private pages are not switched on. Cards you make still work; they just carry themselves inside their link.'}
           </p>
           <div className="oops__actions">
             <Link className="btn btn--primary btn--lg" href="/">
@@ -78,6 +79,7 @@ export default async function SenderPage({ params }) {
 
   const opened = Boolean(card.opened_at);
   const forgiven = Boolean(card.forgiven_at);
+  const sealed = isSealed(card.unlock_at);
 
   return (
     <Shell>
@@ -87,6 +89,7 @@ export default async function SenderPage({ params }) {
         <h2>Your card for {card.to_name}</h2>
         <p className="panel__sub">
           Created {relativeTime(card.created_at)} · from {card.from_name} · {card.theme} theme
+          {card.unlock_at ? <> · 🕰️ sealed until {absoluteTime(card.unlock_at)}</> : null}
         </p>
         <div className="linkgroup" style={{ marginTop: 6 }}>
           <h4>Their link — this is the one to send</h4>
@@ -109,6 +112,21 @@ export default async function SenderPage({ params }) {
               <span>{absoluteTime(card.created_at)}</span>
             </span>
           </li>
+          {card.unlock_at ? (
+            <li>
+              <span className={`tl__dot${sealed ? '' : ' is-done'}`} aria-hidden="true">
+                🕰️
+              </span>
+              <span className="tl__body">
+                <b>{sealed ? `Sealed until ${absoluteTime(card.unlock_at)}` : 'Unsealed'}</b>
+                <span>
+                  {sealed
+                    ? 'Until then they see a sealed envelope and a countdown — the words are not sent to their browser at all.'
+                    : `The seal broke on ${absoluteTime(card.unlock_at)}. It reads like any other card now.`}
+                </span>
+              </span>
+            </li>
+          ) : null}
           <li>
             <span className={`tl__dot${opened ? ' is-done' : ''}`} aria-hidden="true">
               {opened ? '👀' : '…'}
@@ -118,7 +136,9 @@ export default async function SenderPage({ params }) {
               <span>
                 {opened
                   ? absoluteTime(card.opened_at)
-                  : 'We will record the moment they first open the envelope.'}
+                  : sealed
+                    ? 'Nothing is recorded while the letter is sealed — the countdown does not count as opening it.'
+                    : 'We will record the moment they first open the envelope.'}
               </span>
             </span>
           </li>

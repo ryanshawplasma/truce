@@ -1,9 +1,10 @@
 import { notFound } from 'next/navigation';
 import CardExperience from '@/app/components/CardExperience';
+import LockedCard from '@/app/components/LockedCard';
 import LocalCard from './LocalCard';
 import { getCardById, getReactionsByCardId } from '@/lib/cards';
 import { metadataBase } from '@/lib/site';
-import { SAMPLE_CARD } from '@/lib/constants';
+import { SAMPLE_CARD, isSealed } from '@/lib/constants';
 
 /**
  * /c/[id] — the card experience.
@@ -55,6 +56,14 @@ export async function generateMetadata({ params }) {
   const to = String(card.to_name || '').trim();
   const from = String(card.from_name || '').trim();
 
+  /* A sealed letter says so, but still never leaks a single word of itself. */
+  if (isSealed(card.unlock_at)) {
+    return build(
+      to ? `A sealed letter for ${to} 🕰️` : 'A sealed letter 🕰️',
+      from ? `${from} sealed this one to open later.` : 'This one is sealed to open later.',
+    );
+  }
+
   return build(
     to ? `For ${to} 💌` : 'Someone left you a letter 💌',
     from ? `Tap to open the envelope ${from} sealed for you 🤍` : 'Tap to open the envelope sealed for you 🤍',
@@ -70,6 +79,24 @@ export default async function CardPage({ params }) {
 
   const card = id === 'demo' ? SAMPLE_CARD : await getCardById(id);
   if (!card) notFound();
+
+  /* ---- Time capsule -----------------------------------------------------
+     Still sealed? Then the words do not leave the server. We build a brand new
+     object holding only what the locked screen needs — the message, promise,
+     memory and stickers are never serialised into the HTML, so "view source"
+     shows nothing either. */
+  if (isSealed(card.unlock_at)) {
+    return (
+      <LockedCard
+        card={{
+          to_name: card.to_name,
+          from_name: card.from_name,
+          theme: card.theme,
+          unlock_at: card.unlock_at,
+        }}
+      />
+    );
+  }
 
   /* Only real cards get open-tracking, forgiveness and saved reactions. */
   const live = id !== 'demo';

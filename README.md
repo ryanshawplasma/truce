@@ -20,7 +20,17 @@ Free while in beta — no accounts, no payments, no card details.
   style, message, promise, theme, preview), then one button to create the card.
 - **56 hand-written messages** in four styles (sweet, funny, poetic, from the
   heart), filtered by who you're writing to. Every word stays editable.
-- **Four themes** — Blush Rose, Midnight Plum, Peach Sunset, Lavender Haze.
+- **Six themes** — Blush Rose, Sky Blue, Peach Sunset, Lavender Haze, Moonlight
+  and Midnight Plum. Each one is a full set of CSS custom properties, right down
+  to the colour of the paper and the wax seal.
+- **Time-capsule letters** — optionally seal a card until a date and time. Until
+  that moment the recipient sees a sealed envelope and a live countdown, and the
+  server sends them *no* message, promise, memory or stickers at all — the lock
+  is real, not a CSS trick. (Needs a database; a no-setup link carries the card
+  inside itself, so there is nothing to keep shut.)
+- **Our corner** at `/couple` — a tiny private chat room for two, opened with a
+  name and a shared password. Made for the moment one of you is blocked
+  everywhere else and still has something to say. (Also needs a database.)
 - **Six original sticker packs, 62 stickers** — twelve object stickers plus five
   animal/heart couples (Momo & Pip, Rosie & Plum, Clover & Biscuit, Mochi & Bao,
   Poppy & Truffle), each posed ten ways. Every one is inline SVG drawn by us and
@@ -49,6 +59,8 @@ Free while in beta — no accounts, no payments, no card details.
 | `/c/demo` | A built-in sample card — no database needed |
 | `/c/local#c=…` | A card encoded entirely in the link (no-setup mode) |
 | `/s/{token}` | The sender's private page |
+| `/couple` | "Our corner" — create or enter a private room for two |
+| `/couple/room` | The room itself (needs a session cookie) |
 | `/mine` | Cards made on this device (browser storage only) |
 | `/dev?key=…` | Private stats for whoever runs the site (see below) |
 
@@ -124,8 +136,13 @@ Supabase is the database that stores the cards.
 3. Open the file `supabase/schema.sql` from this project, copy **all** of it, and
    paste it into the editor.
 4. Click **Run** (or press Ctrl/Cmd + Enter).
-5. You should see *"Success. No rows returned"*. Done — your `cards` and
-   `reactions` tables now exist, with security switched on.
+5. You should see *"Success. No rows returned"*. Done — your `cards`,
+   `reactions`, `couple_rooms` and `couple_messages` tables now exist, with
+   security switched on.
+
+> **Upgrading an older Truce database?** Paste the same file again. Every
+> statement in it is safe to re-run, and it now includes the `unlock_at` column
+> (time-capsule letters) and the two "Our corner" tables.
 
 ### 3. Collect your two secret values
 
@@ -175,7 +192,7 @@ on your computer.
    | `SUPABASE_URL` | the Project URL from step 3 |
    | `SUPABASE_SERVICE_ROLE_KEY` | the service_role key from step 3 |
    | `NEXT_PUBLIC_SITE_URL` | `https://your-project.vercel.app` (no trailing slash) |
-   | `ADMIN_SECRET` | *(optional)* any long password you invent, for the `/dev` stats page |
+   | `ADMIN_SECRET` | *(recommended)* any long password you invent. It unlocks the `/dev` stats page **and** signs the "Our corner" session cookie |
 
    You won't know the exact site URL until the first deploy finishes — that's
    fine. Deploy once, copy the address Vercel gives you, then come back to
@@ -276,6 +293,44 @@ showing exactly what a new entry looks like. The database already has an
 
 ---
 
+## Our corner: how it works, and what it is not
+
+`/couple` is a shared-secret room. Two people agree on a **name** and a
+**password**; whoever knows both is in, and nobody else is. There are no
+accounts, no email addresses and no phone numbers, which is the whole point —
+it works when every other channel is closed.
+
+**What we do properly**
+
+- The password is never stored. We keep `scrypt(password, random salt)` and
+  compare with a constant-time equal, so a wrong guess leaks nothing about how
+  close it was (`lib/couple.js`).
+- The session is an **httpOnly, signed cookie** — `roomId|side|expiry` plus an
+  HMAC-SHA256 over exactly that. JavaScript in the browser cannot read it, and
+  it cannot be forged without the server secret. It lasts 30 days.
+- A wrong name and a wrong password give the *same* answer, so the form cannot
+  be used to discover which rooms exist.
+- Messages are capped at 600 characters, with a one-per-second soft throttle.
+- Both tables have RLS on with no policies, exactly like `cards`.
+
+**What it is not — please read this bit**
+
+It is **not end-to-end encrypted.** Messages are stored as plain text in your
+Supabase project, which means whoever runs that project (you) can read them.
+Treat it like a note passed in class: private from the world, not private from
+the person paying for the database.
+
+Two things to tell your users, and they are already written on `/couple`:
+
+1. **Don't reuse an important password here.** Make up something new.
+2. **Don't put anything in it you would be devastated to lose.** There is no
+   password recovery, because there is no email address to send it to.
+
+**Set `ADMIN_SECRET`.** It signs the session cookie (hashed with a purpose
+label, so it is never the same bytes as the `/dev` key). Without it, Truce
+derives a key from your service-role key instead — which works, but rotating
+that key would silently sign everybody out of their corner.
+
 ## Roadmap
 
 - **Payments** — Razorpay (India) and Stripe (everywhere else) for paid tiers;
@@ -283,7 +338,10 @@ showing exactly what a new entry looks like. The database already has an
 - **More occasions** — birthday, anniversary, congratulations, proposal; the
   data model and copy layer are already set up for it.
 - **Photo uploads** — one photo inside the envelope, via Supabase Storage.
-- **Scheduled delivery** — write it tonight, let them get it in the morning.
+- **Our corner v2** — typing indicators, read receipts, and a way to turn a
+  conversation into a card without leaving the room.
+- **Scheduled *delivery*** — time-capsule letters already hold a card shut until
+  its moment; the next step is sending the link at that moment too, by email.
 - **Sender notifications** — an email or push the moment the card is opened.
 - **More themes and seasonal art.**
 

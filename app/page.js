@@ -9,6 +9,8 @@ import MESSAGES from './data/messages';
 import { Sticker } from './components/stickers';
 import { STICKER_IDS, STICKER_PACKS } from '@/lib/constants';
 import { getOccasion } from '@/lib/occasions';
+import BetaChip from './components/BetaChip';
+import { isSupabaseConfigured } from '@/lib/supabase';
 
 /**
  * The landing page.
@@ -20,9 +22,12 @@ import { getOccasion } from '@/lib/occasions';
 
 export default function HomePage() {
   const occasion = getOccasion('sorry');
+  /* Sealed letters and "Our corner" both need somewhere to keep things, so the
+     server tells the client components whether there is a database. */
+  const dbEnabled = isSupabaseConfigured();
 
   return (
-    <MakerProvider>
+    <MakerProvider dbEnabled={dbEnabled}>
       <Nav />
 
       <main id="main">
@@ -166,8 +171,11 @@ export default function HomePage() {
                 <div className="feature__icon" aria-hidden="true">
                   🎨
                 </div>
-                <h3>4 beautiful themes</h3>
-                <p>Blush Rose, Midnight Plum, Peach Sunset and Lavender Haze — each one a fully designed little world.</p>
+                <h3>6 beautiful themes</h3>
+                <p>
+                  Blush Rose, Sky Blue, Peach Sunset, Lavender Haze, Moonlight and Midnight Plum —
+                  each one a fully designed little world, right down to the paper.
+                </p>
               </article>
 
               <article className="feature">
@@ -255,7 +263,10 @@ export default function HomePage() {
               <div className="beta__grid">
                 <div className="beta-card">
                   <h3>Everything unlocked</h3>
-                  <p>All {MESSAGES.length} messages, all four themes, the promise, the memory line and the forgive button.</p>
+                  <p>
+                    All {MESSAGES.length} messages, all six themes, sealed time-capsule letters, the
+                    promise, the memory line and the forgive button.
+                  </p>
                 </div>
                 <div className="beta-card">
                   <h3>Real, private links</h3>
@@ -271,6 +282,51 @@ export default function HomePage() {
               <p className="beta__note" style={{ marginTop: 16 }}>
                 All we ask: mean it.
               </p>
+            </div>
+          </div>
+        </section>
+
+        {/* ---------------------------------------------------- Our corner */}
+        <section className="section" id="corner">
+          <div className="wrap">
+            <div className="corner-promo">
+              <div>
+                <span className="eyebrow">
+                  💙 Our corner
+                  <BetaChip />
+                </span>
+                <h2>Somewhere to talk when everywhere else is closed.</h2>
+                <p>
+                  Sometimes the apology is the easy part and the hard part is having anywhere to say
+                  it. Our corner is a tiny private room for two, opened with a name and a password
+                  you both agree on — no accounts, no phone numbers, nothing to install. It stays
+                  signed in for 30 days, so it is there at 2am.
+                </p>
+                <div className="corner-promo__actions">
+                  <Link className="btn btn--primary btn--lg" href="/couple">
+                    Open our corner 💙
+                  </Link>
+                  <Link className="btn btn--ghost btn--lg" href="/couple">
+                    How it works
+                  </Link>
+                </div>
+              </div>
+
+              <div className="corner-demo" aria-hidden="true">
+                <span className="corner-demo__day">Day 412 together 💙</span>
+                <div className="bubble">
+                  <p className="bubble__body">are you awake?</p>
+                  <span className="bubble__time">02:14</span>
+                </div>
+                <div className="bubble bubble--mine">
+                  <p className="bubble__body">always, for this 🤍</p>
+                  <span className="bubble__time">02:14</span>
+                </div>
+                <div className="bubble">
+                  <p className="bubble__body">ok. can we start over tomorrow?</p>
+                  <span className="bubble__time">02:15</span>
+                </div>
+              </div>
             </div>
           </div>
         </section>

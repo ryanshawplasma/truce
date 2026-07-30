@@ -7,7 +7,9 @@ import { revalidatePath } from 'next/cache';
 import { getSupabase, isSupabaseConfigured } from '@/lib/supabase';
 import { encodeCard } from '@/lib/codec';
 import { siteOrigin } from '@/lib/site';
-import { LIMITS, THEME_IDS, STYLE_IDS, STICKER_IDS, MAX_STICKERS, isValidReaction } from '@/lib/constants';
+import {
+  LIMITS, THEME_IDS, STYLE_IDS, STICKER_IDS, MAX_STICKERS, isValidReaction, normaliseUnlockAt, isSealed,
+} from '@/lib/constants';
 
 /**
  * Server actions. Everything the browser sends is untrusted: every field is
@@ -17,7 +19,13 @@ import { LIMITS, THEME_IDS, STYLE_IDS, STICKER_IDS, MAX_STICKERS, isValidReactio
 
 /* URL-safe, unambiguous alphabet (no "-" or "_" so links are easy to read out loud). */
 const ALPHABET = '0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ';
-const makeId = customAlphabet(ALPHABET, 8);
+
+/* Six characters = 62^6 ≈ 56 billion ids: short enough to text comfortably,
+   long enough that guessing one is hopeless. Collisions are handled by
+   retrying the insert (see createCard), and the eight-character ids handed out
+   before this change keep working — nothing looks at the length. */
+const ID_LENGTH = 6;
+const makeId = customAlphabet(ALPHABET, ID_LENGTH);
 const makeToken = customAlphabet(ALPHABET, 24);
 
 /* ------------------------------------------------------------------ helpers */
@@ -60,6 +68,10 @@ function validateCardInput(input) {
   const severityNumber = Number(input.severity);
   const severity = severityNumber === 1 || severityNumber === 2 || severityNumber === 3 ? severityNumber : 2;
 
+  /* Time-capsule: never trust the browser's clock or its arithmetic. */
+  const unlock = normaliseUnlockAt(input.unlock_at);
+  if (unlock.error) return { error: unlock.error };
+
   return {
     card: {
       occasion: 'sorry', // only occasion for now — see lib/occasions.js
@@ -73,8 +85,27 @@ function validateCardInput(input) {
       theme: oneOf(input.theme, THEME_IDS, 'blush'),
       stickers: cleanStickers(input.stickers),
       severity,
+      unlock_at: unlock.iso,
     },
   };
+}
+
+/* ------------------------------------------------------- getCapabilities */
+
+/**
+ * What this deployment can actually do, asked at request time.
+ *
+ * The landing page is statically prerendered (it is marketing copy — it should
+ * be instant), which means anything it reads from `process.env` is frozen at
+ * build time. That is right almost always, because Vercel builds with the same
+ * environment it runs with. This tiny action is the safety net for when it is
+ * not: the wizard starts with the value baked into the page and quietly
+ * corrects itself a moment later.
+ *
+ * It exposes one boolean and never the keys themselves.
+ */
+export async function getCapabilities() {
+  return { db: isSupabaseConfigured() };
 }
 
 /* --------------------------------------------------------------- createCard */
@@ -91,15 +122,31 @@ export async function createCard(input) {
 
   const origin = await siteOrigin();
 
-  /* No database configured — hand the card back in the URL. */
+  /* No database configured — hand the card back in the URL.
+     A hash link carries the whole card inside it, so there is nothing to seal:
+     drop the unlock date rather than pretending it does something. */
   if (!isSupabaseConfigured()) {
-    return { ok: true, mode: 'hash', payload: encodeCard(card), origin };
+    return { ok: true, mode: 'hash', payload: encodeCard(card), origin, unlockDropped: Boolean(card.unlock_at) };
   }
 
   const supabase = getSupabase();
 
-  /* Short ids can collide (rarely). Retry a few times before giving up. */
-  for (let attempt = 0; attempt < 4; attempt++) {
+  /**
+   * Two kinds of failure, handled differently:
+   *
+   *  - 23505, a unique violation, means the random id already exists. Rare, and
+   *    the fix is simply another id — so we just go round again.
+   *  - anything else is the database itself having a moment (a cold start, a
+   *    dropped connection, a pooler hiccup). Those are usually over in a
+   *    fraction of a second, so we wait 300ms and try once more before giving
+   *    up on a short link.
+   *
+   * Whatever happens, the sender never loses their words: the fallback packs
+   * the card into the link itself.
+   */
+  let realFailures = 0;
+
+  for (let attempt = 0; attempt < 5; attempt++) {
     const id = makeId();
     const edit_token = makeToken();
 
@@ -113,20 +160,47 @@ export async function createCard(input) {
         mode: 'db',
         id,
         editToken: edit_token,
+        unlockAt: card.unlock_at,
         cardUrl: `${origin}/c/${id}`,
         senderUrl: `${origin}/s/${edit_token}`,
       };
     }
 
-    /* 23505 = unique violation: try another id. Anything else is a real error. */
-    if (insertError.code !== '23505') {
-      console.error('[truce] createCard insert failed:', insertError.message);
-      /* Never lose someone's words: fall back to a self-contained link. */
-      return { ok: true, mode: 'hash', payload: encodeCard(card), origin, degraded: true };
-    }
+    if (insertError.code === '23505') continue; // id clash — pick another
+
+    realFailures += 1;
+    /* Log the actual cause, so Vercel Logs answers "why did it degrade?". */
+    console.error(
+      `[truce] createCard insert failed (attempt ${realFailures}):`,
+      JSON.stringify({
+        code: insertError.code || null,
+        message: insertError.message || null,
+        details: insertError.details || null,
+        hint: insertError.hint || null,
+      }),
+    );
+
+    if (realFailures >= 2) break; // one retry was enough of a chance
+    await new Promise((resolve) => setTimeout(resolve, 300));
   }
 
-  return { ok: true, mode: 'hash', payload: encodeCard(card), origin, degraded: true };
+  return degraded(card, origin);
+}
+
+/**
+ * The safety net: the card travels inside its own link.
+ * `degraded: true` tells the wizard to apologise for a wobble rather than to
+ * talk about setting the site up — those are very different messages.
+ */
+function degraded(card, origin) {
+  return {
+    ok: true,
+    mode: 'hash',
+    payload: encodeCard(card),
+    origin,
+    degraded: true,
+    unlockDropped: Boolean(card.unlock_at),
+  };
 }
 
 /* -------------------------------------------------------------- markOpened */
@@ -136,6 +210,12 @@ export async function markOpened(id) {
   if (typeof id !== 'string' || !id || id === 'demo' || id === 'local') return { ok: true };
   const supabase = getSupabase();
   if (!supabase) return { ok: true };
+
+  /* A sealed time-capsule has not been opened, however many times the link is
+     tapped — the sender should not see "opened" before their own date. The
+     locked page never calls this, but the check belongs on the server. */
+  const { data: row } = await supabase.from('cards').select('unlock_at').eq('id', id).maybeSingle();
+  if (row && isSealed(row.unlock_at)) return { ok: true, sealed: true };
 
   const { error } = await supabase
     .from('cards')

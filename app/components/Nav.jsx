@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import BrandMark from './BrandMark';
 import CtaButton from './CtaButton';
+import BetaChip from './BetaChip';
 
 /* In-page anchors, plus one real route: `route: true` entries use next/link so
    they navigate instead of scrolling. */
@@ -11,6 +12,7 @@ const LINKS = [
   { href: '#how', label: 'How it works' },
   { href: '#messages', label: 'Messages' },
   { href: '#pricing', label: 'Pricing' },
+  { href: '/couple', label: 'Our corner 💙', route: true, beta: true },
   { href: '#faq', label: 'FAQ' },
   { href: '/mine', label: 'My cards', route: true },
 ];
@@ -47,6 +49,7 @@ export default function Nav() {
             l.route ? (
               <Link key={l.href} href={l.href}>
                 {l.label}
+                {l.beta ? <BetaChip /> : null}
               </Link>
             ) : (
               <a key={l.href} href={l.href}>
@@ -75,6 +78,7 @@ export default function Nav() {
           l.route ? (
             <Link key={l.href} href={l.href} onClick={() => setMenuOpen(false)}>
               {l.label}
+              {l.beta ? <BetaChip /> : null}
             </Link>
           ) : (
             <a key={l.href} href={l.href} onClick={() => setMenuOpen(false)}>

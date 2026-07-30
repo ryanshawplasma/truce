@@ -8,6 +8,8 @@ import { PACKS, Sticker } from './stickers';
 import PackTabs from './PackTabs';
 import { getOccasion, envelopeSubtitle } from '@/lib/occasions';
 import { findMyCard } from '@/lib/mycards';
+import { CUTENESS_MAX, cardCutenessStart, cutenessTapStep, cutenessLabel } from '@/lib/cuteness';
+import ShareRow from './ShareRow';
 import {
   burstFrom,
   burstGlyphs,
@@ -15,6 +17,7 @@ import {
   emojiBurstFrom,
   stickerBurstFrom,
   prefersReducedMotion,
+  withTimeout,
 } from './ui';
 
 /**
@@ -35,6 +38,23 @@ const METER_OPENED = 35;
 const METER_READ = 70;
 const METER_FULL = 100;
 const METER_NO_PENALTY = 4;
+
+/* How long the meter takes to fill after "Yes" — long enough to feel like
+   something is happening, short enough that nobody taps twice. */
+const FORGIVE_FILL_MS = 1200;
+
+/**
+ * The fill curve. Ease-out with a small dip-and-catch-up in the middle so the
+ * bar reads as a spring settling rather than a value being assigned.
+ * Starts at exactly 0 and ends at exactly 1.
+ */
+function loadEase(t) {
+  if (t <= 0) return 0;
+  if (t >= 1) return 1;
+  const out = 1 - Math.pow(1 - t, 3);
+  const wobble = Math.sin(t * Math.PI * 2) * 0.055 * (1 - t);
+  return Math.max(0, Math.min(1, out - wobble));
+}
 
 /** Reactions are stored as an emoji, or as "sticker:<id>". */
 function parseReaction(stored) {
@@ -68,11 +88,30 @@ export default function CardExperience({ card, live = false, initialReactions = 
   const [typedDone, setTypedDone] = useState(false);
   const [showForgive, setShowForgive] = useState(false);
   const [forgiven, setForgivenState] = useState(false);
+  /* The beat between "Yes" and the confetti, while the meter fills. */
+  const [forgiving, setForgiving] = useState(false);
+  /* Set once they send anything back, so the reply row stays put afterwards. */
+  const [replied, setReplied] = useState(false);
 
   /* The forgiveness meter: 0 while the envelope is shut, then it climbs. */
   const [meter, setMeter] = useState(0);
   const [teasing, setTeasing] = useState(false);
   const teaseTimer = useRef(null);
+  const fillRaf = useRef(null);
+  const fillTimer = useRef(null);
+  /* A readable-on-demand mirror of `meter`, so the fill animation knows where
+     to start from without adding `meter` to its dependency list. */
+  const meterRef = useRef(0);
+  useEffect(() => {
+    meterRef.current = meter;
+  }, [meter]);
+
+  /* This page's own address, used to tell the sender to come and look. Read
+     after mount so the server render and the first client render agree. */
+  const [pageUrl, setPageUrl] = useState('');
+  useEffect(() => {
+    setPageUrl(window.location.href);
+  }, []);
 
   /* Stickers the recipient has sent back, stuck onto the letter. Seeded from
      whatever they sent on an earlier visit. */
@@ -100,7 +139,14 @@ export default function CardExperience({ card, live = false, initialReactions = 
     });
   }, [live, card.id]);
 
-  useEffect(() => () => window.clearTimeout(teaseTimer.current), []);
+  useEffect(
+    () => () => {
+      window.clearTimeout(teaseTimer.current);
+      window.clearTimeout(fillTimer.current);
+      if (fillRaf.current) cancelAnimationFrame(fillRaf.current);
+    },
+    [],
+  );
 
   /* ---------------------------------------------------- opening the envelope */
   const openEnvelope = useCallback(() => {
@@ -178,18 +224,51 @@ export default function CardExperience({ card, live = false, initialReactions = 
   }, [typedDone]);
 
   /* ---------------------------------------------------- forgiveness */
+  /**
+   * "Yes" does not simply flip a switch. The meter loads from wherever it had
+   * got to up to a full 100 over FORGIVE_FILL_MS, and only then does the
+   * celebration land — so forgiveness reads as something that happened rather
+   * than something that was already true.
+   */
   const handleForgive = useCallback(
     (originEl) => {
-      if (forgiven) return;
-      setForgivenState(true);
+      if (forgiven || forgiving) return;
+      setForgiving(true);
       setTeasing(false);
-      setMeter(METER_FULL);
-      celebrate(originEl);
+
+      /* Record it straight away; the animation is for the eyes, not the data. */
       if (live) {
         setForgiven(card.id).catch(() => {});
       }
+
+      const finish = () => {
+        fillRaf.current = null;
+        setMeter(METER_FULL);
+        setForgiving(false);
+        setForgivenState(true);
+        celebrate(originEl);
+      };
+
+      if (prefersReducedMotion()) {
+        setMeter(METER_FULL);
+        fillTimer.current = window.setTimeout(finish, 150);
+        return;
+      }
+
+      const from = meterRef.current;
+      const startedAt = performance.now();
+      const step = (now) => {
+        const t = Math.min(1, (now - startedAt) / FORGIVE_FILL_MS);
+        setMeter(from + (METER_FULL - from) * loadEase(t));
+        if (t < 1) {
+          fillRaf.current = requestAnimationFrame(step);
+          return;
+        }
+        finish();
+      };
+      fillRaf.current = requestAnimationFrame(step);
     },
-    [forgiven, live, card.id],
+    [forgiven, forgiving, live, card.id],
   );
 
   /* Every "No" costs them a little forgiveness. Never below the opening score —
@@ -293,7 +372,7 @@ export default function CardExperience({ card, live = false, initialReactions = 
         ) : (
           /* ---------- Scene 2: the letter ---------- */
           <section className="cardapp__scene">
-            <ForgivenessMeter value={meter} teasing={teasing} full={forgiven} />
+            <ForgivenessMeter value={meter} teasing={teasing} full={forgiven} loading={forgiving} />
 
             {/* `letter--stickered` reserves the top/bottom sticker band (see globals.css)
                 so a stuck-on sticker can never land on the message. */}
@@ -364,6 +443,9 @@ export default function CardExperience({ card, live = false, initialReactions = 
                 </span>
               ) : null}
 
+              {/* Their turn to play with something. Purely local — see below. */}
+              {typedDone ? <CardCutenessMeter card={card} /> : null}
+
               {/* …and anything the recipient has sent back, stuck on live. */}
               {stuckBack.length ? (
                 <span className="letter__stuck">
@@ -388,6 +470,8 @@ export default function CardExperience({ card, live = false, initialReactions = 
                 occasion={occasion}
                 fromName={card.from_name}
                 forgiven={forgiven}
+                forgiving={forgiving}
+                meterValue={meter}
                 onForgive={handleForgive}
                 onNo={handleNo}
               />
@@ -399,7 +483,23 @@ export default function CardExperience({ card, live = false, initialReactions = 
                 live={live}
                 initialReactions={initialReactions}
                 onSticker={handleStickerBack}
+                onSent={() => setReplied(true)}
               />
+            ) : null}
+
+            {/* Their reply, back to the sender. Appears with the celebration and
+                stays for good once anything has been sent. */}
+            {forgiven || replied ? (
+              <div className="replyback">
+                <p className="replyback__title">Let {card.from_name} know 💌</p>
+                <p className="replyback__sub">Send this same link back — it is the fastest way to say “I saw it”.</p>
+                <ShareRow
+                  text="I opened your letter 🤍 come see —"
+                  url={pageUrl}
+                  channels={['native', 'whatsapp', 'telegram', 'sms', 'copy']}
+                  hint={`When ${card.from_name} opens this on their own phone, Truce shows them the way back to their private page — so even if they lost that link, this is how they find your reply.`}
+                />
+              </div>
             ) : null}
           </section>
         )}
@@ -429,11 +529,15 @@ function meterLabel(value, teasing, full) {
   return 'sealed';
 }
 
-function ForgivenessMeter({ value, teasing, full }) {
-  const label = meterLabel(value, teasing, full);
+function ForgivenessMeter({ value, teasing, full, loading = false }) {
+  const label = loading ? 'loading…' : meterLabel(value, teasing, full);
   const pct = Math.max(0, Math.min(100, value));
   return (
-    <div className={`meter${teasing ? ' is-teasing' : ''}${pct >= METER_FULL ? ' is-full' : ''}`}>
+    <div
+      className={`meter${teasing ? ' is-teasing' : ''}${pct >= METER_FULL && !loading ? ' is-full' : ''}${
+        loading ? ' is-loading' : ''
+      }`}
+    >
       <div className="meter__head">
         <span className="meter__title">Forgiveness</span>
         <span className="meter__label">{label}</span>
@@ -453,6 +557,83 @@ function ForgivenessMeter({ value, teasing, full }) {
         </span>
       </div>
     </div>
+  );
+}
+
+/* ==========================================================================
+   The cuteness meter, recipient's edition
+   --------------------------------------------------------------------------
+   The sender watched this climb while they wrote. Now the person holding the
+   letter gets to poke it — every tap adds a few percent and a puff of hearts
+   where their finger landed, and around the sixth tap it gives up entirely at
+   120%. Nothing here is sent anywhere or remembered; it is a toy.
+
+   It is its own <button>, and it stops the click from bubbling, so it can
+   never be mistaken for "skip the typewriter" or "tap the paper".
+   ========================================================================== */
+
+function CardCutenessMeter({ card }) {
+  const [start] = useState(() => cardCutenessStart(card));
+  const [score, setScore] = useState(start);
+  /* Mirrors `score` so the tap handler can do its arithmetic (and its one-off
+     "it broke" burst) outside the state updater, which React is free to call
+     more than once. */
+  const scoreRef = useRef(start);
+  const brokenRef = useRef(start >= CUTENESS_MAX);
+
+  const step = cutenessTapStep(start);
+  const broken = score >= CUTENESS_MAX;
+  const label = cutenessLabel(score);
+
+  const onTap = (e) => {
+    e.stopPropagation();
+
+    /* Hearts from exactly where they tapped — pointer events carry the point,
+       keyboard activation does not, so fall back to the middle of the meter. */
+    let x = e.clientX;
+    let y = e.clientY;
+    if (!x && !y) {
+      const r = e.currentTarget.getBoundingClientRect();
+      x = r.left + r.width / 2;
+      y = r.top + r.height / 2;
+    }
+
+    const next = Math.min(CUTENESS_MAX, scoreRef.current + step);
+    scoreRef.current = next;
+    setScore(next);
+
+    if (next >= CUTENESS_MAX && !brokenRef.current) {
+      brokenRef.current = true;
+      /* It gave everything it had. */
+      burstGlyphs(x, y, { count: 20, rise: true, min: 18, max: 42 });
+    } else {
+      burstGlyphs(x, y, { count: 5, min: 11, max: 20 });
+    }
+  };
+
+  return (
+    <button
+      type="button"
+      className={`cutetap${broken ? ' is-broken' : ''}`}
+      onClick={onTap}
+      aria-label={`Cuteness meter, ${score} percent. Tap to add more.`}
+    >
+      <span className="cutetap__head">
+        <span className="cutetap__title">Cuteness</span>
+        <span className="cutetap__label">
+          {score}% · {label}
+        </span>
+      </span>
+      {/* Decoration: the button's own label carries the number for anyone who
+          cannot see the bar, and a widget role inside a button would only get
+          in the way. */}
+      <span className="cutetap__track" aria-hidden="true">
+        <span className="cutetap__fill" style={{ width: `${(score / CUTENESS_MAX) * 100}%` }} />
+      </span>
+      <span className="cutetap__hint">
+        {broken ? 'You broke it. Well done, honestly. 🚨' : 'Tap it. Go on — see how far it goes.'}
+      </span>
+    </button>
   );
 }
 
@@ -511,7 +692,7 @@ function measureUntransformed(button) {
   return base;
 }
 
-function ForgiveBlock({ occasion, fromName, forgiven, onForgive, onNo }) {
+function ForgiveBlock({ occasion, fromName, forgiven, forgiving = false, meterValue = 0, onForgive, onNo }) {
   const zoneRef = useRef(null);
   const noRef = useRef(null);
   const yesRef = useRef(null);
@@ -746,6 +927,30 @@ function ForgiveBlock({ occasion, fromName, forgiven, onForgive, onNo }) {
     };
   }, []);
 
+  /* The beat while the meter fills. The question is answered, so the buttons
+     go — but the celebration waits for the bar to reach the end.
+
+     The forgiveness meter itself lives at the top of the scene, which on a
+     phone is a screen and a half away by now, so the same value is mirrored
+     here: the payoff has to happen where they are actually looking. */
+  if (forgiving) {
+    const pct = Math.max(0, Math.min(100, meterValue));
+    return (
+      <div className="forgive">
+        <h3>{occasion.forgiveQuestion}</h3>
+        <div className="forgive__loading" role="status">
+          <span className="forgive__loading-heart" aria-hidden="true">
+            💗
+          </span>
+          <span className="forgive__loading-track" aria-hidden="true">
+            <span className="forgive__loading-fill" style={{ width: `${pct}%` }} />
+          </span>
+          <p>Forgiving…</p>
+        </div>
+      </div>
+    );
+  }
+
   if (forgiven) {
     return (
       <div className="forgive">
@@ -822,7 +1027,7 @@ function HugButton() {
    Send something back — emoji reactions
    ========================================================================== */
 
-function ReactionStrip({ cardId, live, initialReactions = [], onSticker }) {
+function ReactionStrip({ cardId, live, initialReactions = [], onSticker, onSent }) {
   const [sending, setSending] = useState('');
   const [last, setLast] = useState(null);   // what they just sent, shown big
   const [sent, setSent] = useState([]);     // every value sent this visit
@@ -852,9 +1057,15 @@ function ReactionStrip({ cardId, live, initialReactions = [], onSticker }) {
     /* Optimistic: it appears in the strip (and on the letter) straight away. */
     setHistory((list) => [...list, { key: `local-${Date.now()}-${list.length}`, stored }]);
     if (kind === 'sticker' && onSticker) onSticker(value);
+    if (onSent) onSent();
 
     try {
-      const res = await addReaction(cardId, stored);
+      /* Bounded: a stalled request must not leave every reaction button
+         disabled with a spinner nobody can dismiss. */
+      const res = await withTimeout(addReaction(cardId, stored), 8000, {
+        ok: false,
+        error: 'That is taking a while — it may not have sent. Try again?',
+      });
       if (res.ok) {
         setSent((list) => (list.includes(stored) ? list : [...list, stored]));
         setNote(
@@ -862,7 +1073,7 @@ function ReactionStrip({ cardId, live, initialReactions = [], onSticker }) {
             ? 'Sent 🤍 they will see it on their page.'
             : isDemo
               ? 'Sent 🤍 (this is the sample card, so nothing is saved.)'
-              : 'Sent 🤍 (this card lives in its link, so nothing is saved.)',
+              : 'Sent 🤍 (nothing is saved for this one — it stays on your screen.)',
         );
       } else {
         setNote(res.error || 'Could not send that just now.');
@@ -899,7 +1110,7 @@ function ReactionStrip({ cardId, live, initialReactions = [], onSticker }) {
             <p className="sentback__note">
               {isDemo
                 ? 'This is the sample card, so these stay on your screen only — nothing is saved.'
-                : 'This card travels inside its own link with no database behind it, so these stay on your screen only.'}
+                : 'This letter arrived with everything tucked inside its link, so these stay on your screen only.'}
             </p>
           ) : null}
         </div>

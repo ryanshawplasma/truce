@@ -38,6 +38,9 @@ export default function Footer() {
                 <a href="#pricing">Pricing</a>
               </li>
               <li>
+                <a href="/couple">Our corner 💙</a>
+              </li>
+              <li>
                 <a href="/c/demo">See a sample card</a>
               </li>
               <li>
