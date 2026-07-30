@@ -819,13 +819,17 @@ ul{margin:0;padding:0;list-style:none}
 .env-scene h2{font-size:clamp(1.7rem,5.4vw,2.5rem);margin-bottom:6px}
 .env-scene__sub{color:var(--t-ink-soft);margin-bottom:clamp(26px,5vw,38px);font-size:1.03rem;max-width:420px}
 .env-wrap{
-  perspective:1100px;width:min(360px,86vw);margin-bottom:26px;
+  width:min(360px,86vw);margin-bottom:26px;
   background:none;border:0;padding:0;display:block;
   transition:transform .35s var(--ease);
 }
 .env{
   /* display:block — this is a <span>; an inline box discards width/aspect-ratio */
-  display:block;position:relative;width:100%;aspect-ratio:1.5/1;transform-style:preserve-3d;
+  display:block;position:relative;width:100%;aspect-ratio:1.5/1;
+  /* Flat on purpose: inside a 3D rendering context iOS Safari sorts children by
+     z position and falls back to DOM order, which puts the rising letter behind
+     the envelope front. The flap carries its own perspective() instead. */
+  transform-style:flat;isolation:isolate;
   transition:transform .5s var(--ease);
   animation:envBreathe 4.5s ease-in-out infinite;
 }
@@ -833,13 +837,13 @@ ul{margin:0;padding:0;list-style:none}
 @keyframes envBreathe{0%,100%{transform:translateY(0)}50%{transform:translateY(-7px)}}
 .env__back{
   position:absolute;inset:0;border-radius:16px;background:var(--t-env);
-  box-shadow:var(--t-shadow);
+  box-shadow:var(--t-shadow);z-index:1;
 }
 .env__letter{
   position:absolute;left:7%;right:7%;top:9%;height:74%;
   background:var(--t-paper);border-radius:9px;
   box-shadow:0 4px 14px rgba(0,0,0,.12);
-  z-index:2;transition:transform .85s var(--ease),opacity .5s var(--ease);
+  z-index:3;transition:transform .85s var(--ease),opacity .5s var(--ease);
   display:flex;align-items:center;justify-content:center;
   padding:14px;
 }
@@ -850,7 +854,7 @@ ul{margin:0;padding:0;list-style:none}
   position:absolute;top:0;left:0;right:0;height:58%;
   background:var(--t-env-flap);
   clip-path:polygon(0 0,100% 0,50% 100%);
-  transform-origin:top center;transform:rotateX(0deg);
+  transform-origin:top center;transform:perspective(1100px) rotateX(0deg);
   transition:transform .8s var(--ease),z-index 0s .4s;
   z-index:5;border-radius:16px 16px 0 0;
   box-shadow:0 3px 8px rgba(0,0,0,.06);
@@ -870,7 +874,7 @@ ul{margin:0;padding:0;list-style:none}
   transition:transform .45s var(--ease-out-back),opacity .4s var(--ease);
 }
 .env__seal svg{width:26px;height:26px;color:#fff;opacity:.92}
-.env.is-open .env__flap{transform:rotateX(178deg);z-index:1;transition:transform .8s var(--ease),z-index 0s .35s}
+.env.is-open .env__flap{transform:perspective(1100px) rotateX(178deg);z-index:2;transition:transform .8s var(--ease),z-index 0s .35s}
 .env.is-open .env__seal{transform:translate(-50%,-50%) scale(0) rotate(45deg);opacity:0}
 .env.is-open .env__letter{transform:translateY(-64%) rotate(-1.5deg);box-shadow:0 22px 40px rgba(0,0,0,.2)}
 .env.is-open{animation:none}

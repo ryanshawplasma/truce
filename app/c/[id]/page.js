@@ -2,6 +2,7 @@ import { notFound } from 'next/navigation';
 import CardExperience from '@/app/components/CardExperience';
 import LocalCard from './LocalCard';
 import { getCardById } from '@/lib/cards';
+import { metadataBase } from '@/lib/site';
 import { SAMPLE_CARD } from '@/lib/constants';
 
 /**
@@ -16,35 +17,48 @@ import { SAMPLE_CARD } from '@/lib/constants';
  */
 export const dynamic = 'force-dynamic';
 
+/**
+ * Share previews.
+ *
+ * Kept deliberately tiny: a chat bubble has room for one line, so anything
+ * longer just gets truncated into mush. The picture does the talking — see
+ * ./opengraph-image.js, which Next attaches to og:image automatically.
+ *
+ * `twitter` has to be spelled out here: metadata is merged shallowly, so
+ * without it this route would inherit the landing page's much longer copy.
+ */
 export async function generateMetadata({ params }) {
   const { id } = await params;
 
   /* Private links should never show up in search results. */
   const robots = { index: false, follow: false };
+  const base = await metadataBase();
+
+  const build = (title, description) => ({
+    metadataBase: base,
+    title,
+    description,
+    robots,
+    openGraph: { title, description, type: 'website', siteName: 'Truce' },
+    twitter: { card: 'summary_large_image', title, description },
+  });
 
   if (id === 'local') {
-    return {
-      title: 'A card is waiting for you 💌 — Truce',
-      description: 'Someone has something to say to you.',
-      robots,
-    };
+    return build('Someone left you a letter 💌', 'Tap to open the envelope sealed for you 🤍');
   }
 
   const card = id === 'demo' ? SAMPLE_CARD : await getCardById(id);
   if (!card) {
-    return { title: 'Card not found — Truce', description: 'This card link is not working.', robots };
+    return build('Someone left you a letter 💌', 'Tap to open the envelope sealed for you 🤍');
   }
 
-  return {
-    title: `For ${card.to_name} 💌 — Truce`,
-    description: `${card.from_name} has something to say to you.`,
-    robots,
-    openGraph: {
-      title: `For ${card.to_name} 💌 — Truce`,
-      description: `${card.from_name} has something to say to you.`,
-      type: 'website',
-    },
-  };
+  const to = String(card.to_name || '').trim();
+  const from = String(card.from_name || '').trim();
+
+  return build(
+    to ? `For ${to} 💌` : 'Someone left you a letter 💌',
+    from ? `Tap to open the envelope ${from} sealed for you 🤍` : 'Tap to open the envelope sealed for you 🤍',
+  );
 }
 
 export default async function CardPage({ params }) {
