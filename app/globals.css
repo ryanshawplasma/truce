@@ -334,7 +334,7 @@ ul{margin:0;padding:0;list-style:none}
 @media (min-width:760px){.proof__dot{display:block}}
 
 /* Steps */
-.steps{display:grid;gap:20px;counter-reset:step}
+.steps{display:grid;gap:20px;counter-reset:step;list-style:none;margin:0;padding:0}
 .step{
   position:relative;background:#fff;border:1px solid var(--line);
   border-radius:var(--r-lg);padding:30px 26px 26px;box-shadow:var(--sh-sm);
