@@ -1506,3 +1506,277 @@ ul{margin:0;padding:0;list-style:none}
   .reactions__big-sticker{animation:none !important}
   .sticker-pick:hover,.tray__btn:hover{transform:none}
 }
+
+/* ============================================================================
+   11. Round 2 — meters, gentler asides, stickier stickers
+   ----------------------------------------------------------------------------
+   Everything below was added after the first round of user feedback on the
+   live site. Same tokens, same rhythm as the rest of the design system.
+   ========================================================================== */
+
+/* ---------- The gentle "…about x 🙈" aside -------------------------------- */
+/* Replaces the old "Re:" subject line. It sits UNDER the message, reads like
+   an afterthought rather than a memo header, and never shouts. */
+.letter__about{
+  margin:16px 0 0;
+  font-family:var(--font-display);
+  font-style:italic;
+  font-size:.94rem;
+  line-height:1.5;
+  color:var(--t-ink-soft);
+  opacity:.85;
+  animation:riseIn .5s var(--ease) both;
+}
+.mini__about{
+  font-family:var(--font-display);
+  font-style:italic;font-size:.82rem;
+  opacity:.7;margin:-4px 0 12px;
+}
+
+/* ---------- Scene 1: one big tap target ---------------------------------- */
+.env-scene{position:relative}
+/* Invisible, covers the whole scene: the name, the envelope and the hint are
+   all "open the letter". Sits above the artwork so there is exactly one
+   control to find, tap or focus. */
+.env-scene__hit{
+  position:absolute;inset:0;z-index:6;
+  background:transparent;border:0;padding:0;margin:0;
+  cursor:pointer;border-radius:var(--r-lg);
+  -webkit-tap-highlight-color:transparent;
+}
+/* z-index (not pointer-events:none) is what keeps the overlay on top: this is a
+   positioned element with a z-index, so it forms a stacking context and nothing
+   inside it — not the stickers at z-index 7, not the sparkles at 8 — can paint
+   above .env-scene__hit and steal the tap. Leaving the artwork hit-testable
+   also keeps it visible to elementFromPoint, which the QA probes rely on. */
+.env-scene__stack{
+  position:relative;z-index:1;
+  display:flex;flex-direction:column;align-items:center;width:100%;
+}
+/* Hover lives on the sibling, since the artwork itself is not the button. */
+.env-scene__hit:hover + .env-scene__stack .env-wrap{transform:translateY(-5px) scale(1.012)}
+.env-scene__hit:active + .env-scene__stack .env-wrap{transform:translateY(-2px) scale(.995)}
+
+/* ---------- Envelope: "notice me" idle wiggle + sparkle ------------------- */
+/* A separate element from .env so this and the constant breathing animation
+   never fight over the same transform. Fires once every 6s. */
+.env-idle{display:block;position:relative;animation:envIdle 6s var(--ease) infinite}
+.env-idle.is-open{animation:none}
+@keyframes envIdle{
+  0%{transform:rotate(0deg)}
+  2%{transform:rotate(-2.6deg)}
+  4.5%{transform:rotate(2.6deg)}
+  7%{transform:rotate(-1.5deg)}
+  9%{transform:rotate(.8deg)}
+  11%,100%{transform:rotate(0deg)}
+}
+.env-sparkles{position:absolute;inset:-18px;pointer-events:none;z-index:8}
+.env-sparkle{
+  position:absolute;font-size:18px;line-height:1;opacity:0;
+  animation:envSpark 6s var(--ease) infinite;
+}
+.env-sparkle--1{top:2%;left:4%}
+.env-sparkle--2{top:-2%;right:8%;animation-delay:.16s;font-size:14px}
+.env-sparkle--3{bottom:6%;right:2%;animation-delay:.32s;font-size:15px}
+@keyframes envSpark{
+  0%{opacity:0;transform:scale(.3) rotate(-12deg)}
+  3%{opacity:1;transform:scale(1.15) rotate(6deg)}
+  7%{opacity:.7;transform:scale(.92) rotate(0deg)}
+  12%,100%{opacity:0;transform:scale(.3) rotate(8deg)}
+}
+
+/* ---------- The forgiveness meter ---------------------------------------- */
+.meter{width:min(560px,100%);margin:0 0 clamp(16px,3.5vw,24px);text-align:left}
+.meter__head{display:flex;justify-content:space-between;align-items:baseline;gap:10px;margin-bottom:9px}
+.meter__title{
+  font-size:.68rem;font-weight:800;letter-spacing:.15em;text-transform:uppercase;
+  color:var(--t-ink-soft);
+}
+.meter__label{font-size:.88rem;font-weight:800;color:var(--t-accent)}
+.meter__track{
+  position:relative;height:12px;border-radius:var(--r-pill);
+  background:var(--t-accent-soft);border:1px solid var(--t-paper-edge);
+}
+.meter__fill{
+  position:absolute;left:0;top:0;bottom:0;border-radius:var(--r-pill);
+  background:linear-gradient(90deg,var(--t-accent),var(--t-seal));
+  transition:width .75s var(--ease-out-back);
+}
+.meter__heart{
+  position:absolute;top:50%;font-size:1.2rem;line-height:1;
+  transform:translate(-50%,-50%);
+  transition:left .75s var(--ease-out-back);
+  filter:drop-shadow(0 2px 5px rgba(0,0,0,.25));
+}
+.meter.is-teasing .meter__label{color:var(--t-ink-soft)}
+.meter.is-teasing .meter__heart{animation:meterWobble .5s var(--ease) 2}
+.meter.is-full .meter__heart{animation:meterPop .65s var(--ease-out-back) 1}
+@keyframes meterWobble{
+  0%,100%{transform:translate(-50%,-50%) rotate(0deg)}
+  25%{transform:translate(-50%,-50%) rotate(-18deg)}
+  75%{transform:translate(-50%,-50%) rotate(18deg)}
+}
+@keyframes meterPop{
+  0%{transform:translate(-50%,-50%) scale(1)}
+  45%{transform:translate(-50%,-50%) scale(1.65)}
+  100%{transform:translate(-50%,-50%) scale(1)}
+}
+
+/* ---------- The cuteness meter (wizard) ---------------------------------- */
+.cuteness{
+  margin:0 0 20px;padding:15px 17px;
+  background:#fff;border:1px solid var(--line);border-radius:var(--r);
+  box-shadow:var(--sh-xs);
+  transition:border-color .3s var(--ease),box-shadow .3s var(--ease);
+}
+.cuteness__head{display:flex;justify-content:space-between;align-items:baseline;gap:10px;margin-bottom:9px}
+.cuteness__title{
+  font-size:.68rem;font-weight:800;letter-spacing:.15em;text-transform:uppercase;color:var(--plum-soft);
+}
+.cuteness__label{display:inline-block;font-size:.9rem;font-weight:800;color:var(--rose-deep)}
+.cuteness__track{height:10px;border-radius:var(--r-pill);background:rgba(232,93,117,.14);overflow:hidden}
+.cuteness__fill{
+  display:block;height:100%;border-radius:var(--r-pill);
+  background:linear-gradient(90deg,var(--rose),var(--gold));
+  transition:width .6s var(--ease-out-back);
+}
+.cuteness__hint{margin:10px 0 0;font-size:.82rem;color:var(--plum-soft);font-weight:600}
+.cuteness.is-max{border-color:rgba(232,93,117,.45);box-shadow:0 0 0 4px rgba(232,93,117,.1)}
+.cuteness.is-max .cuteness__label{animation:cutePulse 1.6s var(--ease) infinite}
+@keyframes cutePulse{0%,100%{transform:scale(1)}50%{transform:scale(1.07)}}
+.done .cuteness{margin-top:22px;text-align:left}
+
+/* ---------- Stickers clustered inside the letter -------------------------- */
+.letter__cluster{
+  display:flex;justify-content:flex-end;align-items:flex-end;
+  margin-top:16px;padding-right:2px;
+}
+.cluster-sticker{
+  width:52px;height:52px;margin-left:-12px;
+  filter:drop-shadow(0 4px 9px rgba(61,33,55,.22));
+}
+.cluster-sticker--1{transform:rotate(-9deg)}
+.cluster-sticker--2{transform:rotate(6deg)}
+.cluster-sticker--3{transform:rotate(-4deg)}
+.cluster-sticker--4{transform:rotate(11deg)}
+@media (max-width:600px){
+  .cluster-sticker{width:46px;height:46px;margin-left:-10px}
+}
+
+/* Sent back by the recipient, stuck on live. */
+.letter__stuck{
+  display:block;margin-top:18px;padding-top:14px;
+  border-top:1px dashed var(--t-accent-soft);
+}
+.letter__stuck-label{
+  display:block;font-size:.66rem;font-weight:800;letter-spacing:.13em;
+  text-transform:uppercase;color:var(--t-ink-soft);margin-bottom:9px;
+}
+.letter__stuck-row{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.stuck-sticker{
+  width:46px;height:46px;
+  filter:drop-shadow(0 3px 8px rgba(61,33,55,.22));
+  animation:stickOn .45s var(--ease-out-back) both;
+}
+@keyframes stickOn{
+  0%{opacity:0;transform:rotate(var(--stuck-rot,0deg)) scale(1.9)}
+  100%{opacity:1;transform:rotate(var(--stuck-rot,0deg)) scale(1)}
+}
+
+/* ---------- "Sent back so far" ------------------------------------------- */
+.sentback{
+  margin:0 auto 22px;padding:14px 16px;max-width:460px;
+  border-radius:var(--r);background:var(--t-accent-soft);
+  border:1px solid var(--t-paper-edge);
+}
+.sentback__label{
+  margin:0 0 10px;font-size:.66rem;font-weight:800;letter-spacing:.14em;
+  text-transform:uppercase;color:var(--t-ink-soft);
+}
+.sentback__row{display:flex;flex-wrap:wrap;gap:8px;justify-content:center;align-items:center}
+.sentback__item{
+  display:inline-grid;place-items:center;width:44px;height:44px;
+  border-radius:14px;background:var(--t-paper);border:1px solid var(--t-paper-edge);
+  box-shadow:0 3px 9px rgba(0,0,0,.09);
+  animation:pop .35s var(--ease-out-back) both;
+}
+.sentback__item--emoji{font-size:1.4rem}
+.sentback__item svg{width:36px;height:36px}
+.sentback__note{margin:11px 0 0;font-size:.78rem;color:var(--t-ink-soft);font-weight:600}
+
+/* The Yes button is never unreachable, whatever the No button is up to. */
+.forgive__zone .btn-yes{position:relative;z-index:3}
+
+/* ---------- Success screen mascot ---------------------------------------- */
+.done__hero{display:flex;align-items:center;justify-content:center;gap:6px;margin-bottom:8px}
+.done__hero .done__badge{margin-bottom:0}
+.done__mascot{
+  width:92px;height:92px;flex:0 0 92px;
+  animation:mascotHappy 2.6s var(--ease) infinite;
+  transform-origin:50% 86%;
+}
+@keyframes mascotHappy{
+  0%,100%{transform:rotate(-6deg) translateY(0)}
+  50%{transform:rotate(6deg) translateY(-7px)}
+}
+
+/* ---------- /dev — the private stats page -------------------------------- */
+.devpage{min-height:100vh;display:flex;flex-direction:column}
+.devpage__main{
+  flex:1;width:100%;max-width:860px;margin-inline:auto;
+  padding:clamp(28px,6vw,56px) var(--pad) 60px;
+}
+.dev-flag{
+  display:inline-flex;align-items:center;gap:8px;margin-bottom:18px;
+  font-size:.72rem;font-weight:800;letter-spacing:.12em;text-transform:uppercase;
+  color:var(--plum);background:rgba(242,184,128,.22);
+  border:1px solid rgba(226,154,87,.4);padding:7px 14px;border-radius:var(--r-pill);
+}
+.stat-grid{display:grid;gap:12px;grid-template-columns:repeat(2,1fr);margin-top:4px}
+@media (min-width:700px){.stat-grid{grid-template-columns:repeat(5,1fr)}}
+.stat{
+  background:#fff;border:1px solid var(--line);border-radius:var(--r);
+  padding:16px 12px;text-align:center;box-shadow:var(--sh-xs);
+}
+.stat b{display:block;font-family:var(--font-display);font-size:1.85rem;line-height:1.15;color:var(--plum)}
+.stat span{
+  font-size:.68rem;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:var(--plum-soft);
+}
+.dev-table__scroll{overflow-x:auto;-webkit-overflow-scrolling:touch}
+.dev-table{width:100%;border-collapse:collapse;font-size:.88rem;min-width:460px}
+.dev-table th{
+  text-align:left;font-size:.66rem;letter-spacing:.12em;text-transform:uppercase;
+  color:var(--plum-soft);padding:9px 10px;border-bottom:1px solid var(--line);white-space:nowrap;
+}
+.dev-table td{padding:11px 10px;border-bottom:1px solid var(--line);color:var(--plum-mid);white-space:nowrap}
+.dev-table tr:last-child td{border-bottom:0}
+.dev-table code{
+  font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  font-size:.85rem;color:var(--plum);background:var(--rose-soft);
+  padding:2px 8px;border-radius:7px;
+}
+.dev-steps{margin:14px 0 0;padding-left:22px;list-style:decimal;display:grid;gap:16px}
+.dev-steps li{color:var(--plum-mid);font-size:.95rem;line-height:1.6}
+.dev-steps code,.panel code{
+  font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  font-size:.85rem;color:var(--plum);background:var(--rose-soft);
+  padding:2px 7px;border-radius:6px;
+}
+.codeblock{
+  display:block;background:var(--plum);color:#FFE9DF;
+  padding:13px 16px;border-radius:var(--r-sm);margin:12px 0;
+  font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  font-size:.84rem;overflow-x:auto;white-space:pre;
+}
+
+/* ---------- Motion preferences for everything above ---------------------- */
+@media (prefers-reduced-motion:reduce){
+  /* Static hint only — no wiggle, no sparkle. */
+  .env-idle{animation:none !important}
+  .env-sparkles{display:none !important}
+  .done__mascot,
+  .cuteness.is-max .cuteness__label,
+  .meter.is-teasing .meter__heart,
+  .meter.is-full .meter__heart{animation:none !important}
+  .env-scene__hit:hover + .env-scene__stack .env-wrap{transform:none}
+}

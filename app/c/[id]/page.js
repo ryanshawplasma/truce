@@ -1,7 +1,7 @@
 import { notFound } from 'next/navigation';
 import CardExperience from '@/app/components/CardExperience';
 import LocalCard from './LocalCard';
-import { getCardById } from '@/lib/cards';
+import { getCardById, getReactionsByCardId } from '@/lib/cards';
 import { metadataBase } from '@/lib/site';
 import { SAMPLE_CARD } from '@/lib/constants';
 
@@ -74,5 +74,9 @@ export default async function CardPage({ params }) {
   /* Only real cards get open-tracking, forgiveness and saved reactions. */
   const live = id !== 'demo';
 
-  return <CardExperience card={card} live={live} />;
+  /* Anything they have already sent back, so the "Sent back so far" strip is
+     populated when they come back to the card a second time. */
+  const reactions = live ? await getReactionsByCardId(id) : [];
+
+  return <CardExperience card={card} live={live} initialReactions={reactions} />;
 }

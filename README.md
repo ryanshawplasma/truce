@@ -32,6 +32,9 @@ Free while in beta — no accounts, no payments, no card details.
 - **A private sender page** at `/s/{token}` — share link, a timeline (created →
   opened → forgiven), the reactions you've received, and a delete button.
 - **Open-tracking** — the first time the envelope is opened, we record it.
+- **A forgiveness meter** on the card and a **cuteness meter** in the maker —
+  both purely for fun, neither is stored anywhere.
+- **A private stats page** at `/dev` — counts only, never card contents.
 - **Works with no setup at all** — with no database configured, cards are packed
   into the link itself (`/c/local#c=…`) and everything still works.
 
@@ -44,6 +47,7 @@ Free while in beta — no accounts, no payments, no card details.
 | `/c/demo` | A built-in sample card — no database needed |
 | `/c/local#c=…` | A card encoded entirely in the link (no-setup mode) |
 | `/s/{token}` | The sender's private page |
+| `/dev?key=…` | Private stats for whoever runs the site (see below) |
 
 ### Sticker packs
 
@@ -161,13 +165,14 @@ on your computer.
 1. Go to <https://vercel.com> and sign up with your GitHub account.
 2. Click **Add New… → Project**, find your `truce` repository, click **Import**.
 3. Leave every build setting exactly as it is — Vercel detects Next.js by itself.
-4. Before clicking Deploy, open **Environment Variables** and add three:
+4. Before clicking Deploy, open **Environment Variables** and add these:
 
    | Name | Value |
    | --- | --- |
    | `SUPABASE_URL` | the Project URL from step 3 |
    | `SUPABASE_SERVICE_ROLE_KEY` | the service_role key from step 3 |
    | `NEXT_PUBLIC_SITE_URL` | `https://your-project.vercel.app` (no trailing slash) |
+   | `ADMIN_SECRET` | *(optional)* any long password you invent, for the `/dev` stats page |
 
    You won't know the exact site URL until the first deploy finishes — that's
    fine. Deploy once, copy the address Vercel gives you, then come back to
@@ -177,6 +182,21 @@ on your computer.
 
 Visit your new site, make a card, and check that `/s/{token}` shows "Opened"
 after you open the card link in another browser. If it does, you're live. 🎉
+
+### Checking how it's going: the `/dev` page
+
+Truce has a small private dashboard showing how many cards have been made,
+opened and forgiven, plus the ten most recent card ids. It shows **counts and
+ids only** — it can never display what anybody wrote.
+
+1. Invent a long password, e.g. `truce-9fJ2xQ-stats`.
+2. Add it as an environment variable named `ADMIN_SECRET` (in `.env.local`
+   locally, or in Vercel → Settings → Environment Variables), then redeploy.
+3. Visit `https://your-site/dev?key=truce-9fJ2xQ-stats`.
+
+Without `ADMIN_SECRET` set, the page simply explains how to switch it on. With
+the wrong key, it shows a friendly "nothing to see here". Keep the link private:
+that key is the only lock on the page.
 
 ### Using your own domain
 

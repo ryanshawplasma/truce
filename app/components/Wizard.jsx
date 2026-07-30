@@ -5,6 +5,7 @@ import MESSAGES from '../data/messages';
 import { createCard } from '../actions';
 import {
   RECIPIENTS, SEVERITIES, REASONS, STYLES, STYLE_LABEL, THEMES, LIMITS, FEELING_EMOJI, MAX_STICKERS,
+  softenReason,
 } from '@/lib/constants';
 import { PACKS, Sticker } from './stickers';
 import PackTabs from './PackTabs';
@@ -81,6 +82,77 @@ function toCard(data) {
   };
 }
 
+/* ------------------------------------------------------------- cuteness */
+
+/**
+ * The cuteness meter — pure fun, nothing is stored or sent anywhere.
+ *
+ * It rewards the things that actually make a card feel personal: a promise, a
+ * memory, stickers, a bit of emoji in the message. Full marks is reachable but
+ * takes effort, which is the point.
+ */
+const CUTENESS_MAX = 100;
+
+function cutenessScore(data) {
+  let score = 30; // you showed up and wrote something
+  if (tidy(data.promise)) score += 15;
+  if (tidy(data.memory)) score += 15;
+  score += Math.min(4, (data.stickers || []).length) * 6; // up to 24
+  score += Math.min(4, countEmoji(data.message)) * 3; //     up to 12
+  if (data.style) score += 2;
+  if (data.theme) score += 2;
+  return Math.max(0, Math.min(CUTENESS_MAX, score));
+}
+
+/** How many emoji are sprinkled through the message. */
+function countEmoji(text) {
+  const matches = String(text || '').match(/\p{Extended_Pictographic}/gu);
+  return matches ? matches.length : 0;
+}
+
+function cutenessLabel(score) {
+  if (score >= 90) return 'dangerously cute 🧸💘';
+  if (score >= 80) return 'critically cute 💞';
+  if (score >= 68) return 'extremely cute 🎀';
+  if (score >= 54) return 'very cute 🧁';
+  if (score >= 42) return 'pretty cute 🌸';
+  return 'sweet start 🌱';
+}
+
+/** A nudge towards the one thing that would help most. */
+function cutenessHint(data) {
+  if (!tidy(data.promise)) return 'Add a promise for a big cuteness bump.';
+  if (!tidy(data.memory)) return 'A shared memory would push this higher.';
+  if ((data.stickers || []).length < 2) return 'Stickers are worth a lot. Just saying.';
+  if (countEmoji(data.message) < 2) return 'A little emoji in the message goes a long way.';
+  return 'Honestly? This is about as cute as it gets.';
+}
+
+function CutenessMeter({ data, showHint = true }) {
+  const score = cutenessScore(data);
+  const label = cutenessLabel(score);
+  return (
+    <div className={`cuteness${score >= 90 ? ' is-max' : ''}`}>
+      <div className="cuteness__head">
+        <span className="cuteness__title">Cuteness</span>
+        <span className="cuteness__label">{label}</span>
+      </div>
+      <div
+        className="cuteness__track"
+        role="progressbar"
+        aria-label="Cuteness meter"
+        aria-valuemin={0}
+        aria-valuemax={100}
+        aria-valuenow={score}
+        aria-valuetext={label}
+      >
+        <span className="cuteness__fill" style={{ width: `${score}%` }} />
+      </div>
+      {showHint ? <p className="cuteness__hint">{cutenessHint(data)}</p> : null}
+    </div>
+  );
+}
+
 /* -------------------------------------------------------------- mini card */
 
 function MiniCard({ card }) {
@@ -100,9 +172,12 @@ function MiniCard({ card }) {
       </div>
 
       <div className="mini__body" style={{ background: 'var(--t-paper)', color: 'var(--t-ink)' }}>
-        {card.reason ? <div className="mini__re">Re: {card.reason}</div> : null}
         <div className="mini__dear">Dear {card.to_name || 'you'},</div>
         <div className="mini__msg">{card.message || 'Your message will appear here.'}</div>
+
+        {/* Matches the card itself: a gentle aside under the message rather
+            than a "Re:" subject line above it. */}
+        {card.reason ? <div className="mini__about">…about {softenReason(card.reason)} 🙈</div> : null}
 
         {card.promise ? (
           <div className="mini__extra" style={{ background: 'var(--t-accent-soft)', color: 'var(--t-ink)' }}>
@@ -707,6 +782,8 @@ export default function Wizard({ onClose }) {
                 <MiniCard card={card} />
               </div>
               <div>
+                <CutenessMeter data={data} />
+
                 <div className="summary">
                   <div className="summary__row">
                     <b>For</b>
@@ -753,13 +830,19 @@ export default function Wizard({ onClose }) {
       default:
         return (
           <div className="done">
-            <div className="done__badge" aria-hidden="true">
-              🎉
+            <div className="done__hero">
+              {/* The Truce mascot, having a very good day. */}
+              <Sticker id="bandaged-heart" size={92} className="done__mascot" />
+              <div className="done__badge" aria-hidden="true">
+                🎉
+              </div>
             </div>
             <h2>Your card is ready</h2>
             <p className="wstep__sub">
               Send the first link to {card.to_name}. Keep the second one to yourself — it is how you check in later.
             </p>
+
+            <CutenessMeter data={data} showHint={false} />
 
             {links ? (
               <>
