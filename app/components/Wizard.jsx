@@ -91,16 +91,17 @@ function toCard(data) {
  * memory, stickers, a bit of emoji in the message. Full marks is reachable but
  * takes effort, which is the point.
  */
-const CUTENESS_MAX = 100;
+/* Yes, it goes to 120%. Cuteness does not respect the laws of percentages. */
+const CUTENESS_MAX = 120;
 
 function cutenessScore(data) {
   let score = 30; // you showed up and wrote something
-  if (tidy(data.promise)) score += 15;
-  if (tidy(data.memory)) score += 15;
-  score += Math.min(4, (data.stickers || []).length) * 6; // up to 24
-  score += Math.min(4, countEmoji(data.message)) * 3; //     up to 12
-  if (data.style) score += 2;
-  if (data.theme) score += 2;
+  if (tidy(data.promise)) score += 18;
+  if (tidy(data.memory)) score += 18;
+  score += Math.min(4, (data.stickers || []).length) * 7; // up to 28
+  score += Math.min(4, countEmoji(data.message)) * 4; //     up to 16
+  if (data.style) score += 5;
+  if (data.theme) score += 5;
   return Math.max(0, Math.min(CUTENESS_MAX, score));
 }
 
@@ -111,6 +112,8 @@ function countEmoji(text) {
 }
 
 function cutenessLabel(score) {
+  if (score >= 120) return 'meter broken 🚨🧸💘';
+  if (score >= 105) return 'off the charts 💘💘';
   if (score >= 90) return 'dangerously cute 🧸💘';
   if (score >= 80) return 'critically cute 💞';
   if (score >= 68) return 'extremely cute 🎀';
@@ -125,6 +128,7 @@ function cutenessHint(data) {
   if (!tidy(data.memory)) return 'A shared memory would push this higher.';
   if ((data.stickers || []).length < 2) return 'Stickers are worth a lot. Just saying.';
   if (countEmoji(data.message) < 2) return 'A little emoji in the message goes a long way.';
+  if (cutenessScore(data) >= 120) return 'You broke the meter. 120%. There is no higher honor.';
   return 'Honestly? This is about as cute as it gets.';
 }
 
@@ -132,21 +136,23 @@ function CutenessMeter({ data, showHint = true }) {
   const score = cutenessScore(data);
   const label = cutenessLabel(score);
   return (
-    <div className={`cuteness${score >= 90 ? ' is-max' : ''}`}>
+    <div className={`cuteness${score >= 105 ? ' is-max' : ''}`}>
       <div className="cuteness__head">
         <span className="cuteness__title">Cuteness</span>
-        <span className="cuteness__label">{label}</span>
+        <span className="cuteness__label">
+          {score}% · {label}
+        </span>
       </div>
       <div
         className="cuteness__track"
         role="progressbar"
         aria-label="Cuteness meter"
         aria-valuemin={0}
-        aria-valuemax={100}
+        aria-valuemax={CUTENESS_MAX}
         aria-valuenow={score}
-        aria-valuetext={label}
+        aria-valuetext={`${score}% — ${label}`}
       >
-        <span className="cuteness__fill" style={{ width: `${score}%` }} />
+        <span className="cuteness__fill" style={{ width: `${(score / CUTENESS_MAX) * 100}%` }} />
       </div>
       {showHint ? <p className="cuteness__hint">{cutenessHint(data)}</p> : null}
     </div>
