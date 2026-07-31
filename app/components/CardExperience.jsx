@@ -4,7 +4,7 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react
 import Link from 'next/link';
 import { addReaction, markOpened, setForgiven } from '../actions';
 import { REACTION_EMOJI, MAX_STICKERS, STICKER_REACTION_PREFIX, softenReason } from '@/lib/constants';
-import { PACKS, Sticker } from './stickers';
+import { PACKS, STICKERS, Sticker, getSticker } from './stickers';
 import PackTabs from './PackTabs';
 import { getOccasion, envelopeSubtitle, envelopeTitle, promiseText, fill } from '@/lib/occasions';
 import { findMyCard } from '@/lib/mycards';
@@ -42,22 +42,24 @@ const METER_READ = 70;
 const METER_FULL = 100;
 const METER_NO_PENALTY = 4;
 
-/* How long the meter takes to fill after "Yes" — long enough to feel like
-   something is happening, short enough that nobody taps twice. */
-const FORGIVE_FILL_MS = 1200;
+/* ---------------------------------------------------------------- pump mode
+   Saying yes used to fill the meter on its own. It looked nice and it asked
+   nothing of the person holding the card, which is the one thing this moment
+   should do. So "Yes" now hands the meter over: it drops to a starting notch
+   and they tap it the rest of the way.
 
-/**
- * The fill curve. Ease-out with a small dip-and-catch-up in the middle so the
- * bar reads as a spring settling rather than a value being assigned.
- * Starts at exactly 0 and ends at exactly 1.
- */
-function loadEase(t) {
-  if (t <= 0) return 0;
-  if (t >= 1) return 1;
-  const out = 1 - Math.pow(1 - t, 3);
-  const wobble = Math.sin(t * Math.PI * 2) * 0.055 * (1 - t);
-  return Math.max(0, Math.min(1, out - wobble));
-}
+   The numbers are chosen so it always takes five to seven satisfying taps —
+   long enough to feel earned, short enough that nobody gives up. */
+const PUMP_START = 12;
+const PUMP_MIN = 12;
+const PUMP_MAX = 18;
+/* With reduced motion the whole thing is three firm taps and no rain. */
+const PUMP_REDUCED_TAPS = 3;
+
+/* How long the big payoff moment stays on screen. It is pointer-events:none
+   throughout and unmounts afterwards, so it can never sit over a button. */
+const PAYOFF_MS = 2600;
+const PAYOFF_REDUCED_MS = 1800;
 
 /** Reactions are stored as an emoji, or as "sticker:<id>". */
 function parseReaction(stored) {
@@ -96,6 +98,16 @@ export default function CardExperience({ card, live = false, initialReactions = 
   /* Set once they send anything back, so the reply row stays put afterwards. */
   const [replied, setReplied] = useState(false);
 
+  /* Pump mode: "Yes" has been said and the meter is now theirs to fill. */
+  const [pumping, setPumping] = useState(false);
+  const pumpTapsRef = useRef(0);
+  const [pumpTaps, setPumpTaps] = useState(0);
+
+  /* The big dramatic moment — the 120% cuteness overload, or a filled meter.
+     `{ text, key }`; key only exists so a second payoff restarts the animation. */
+  const [payoff, setPayoff] = useState(null);
+  const payoffTimer = useRef(null);
+
   /* The forgiveness meter: 0 while the envelope is shut, then it climbs. */
   const [meter, setMeter] = useState(0);
   const [teasing, setTeasing] = useState(false);
@@ -109,12 +121,22 @@ export default function CardExperience({ card, live = false, initialReactions = 
     meterRef.current = meter;
   }, [meter]);
 
-  /* This page's own address, used to tell the sender to come and look. Read
-     after mount so the server render and the first client render agree. */
+  /* Where to send the sender.
+     A saved card gets its own reply page, /r/<id> — one screen answering "did
+     they see it, and what did they say?", which is a far better thing to land
+     on (and to unfurl in a chat) than the sender's own letter reopened.
+     A hash-mode card has no server-side state at all, so there is nothing for a
+     reply page to read: those keep sharing the card link itself.
+     Read after mount so the server render and the first client render agree. */
   const [pageUrl, setPageUrl] = useState('');
+  const [replyUrl, setReplyUrl] = useState('');
+  const [hashMode, setHashMode] = useState(false);
   useEffect(() => {
     setPageUrl(window.location.href);
-  }, []);
+    const saved = Boolean(card.id) && card.id !== 'local';
+    setHashMode(!saved);
+    setReplyUrl(saved ? `${window.location.origin}/r/${card.id}` : window.location.href);
+  }, [card.id]);
 
   /* Stickers the recipient has sent back, stuck onto the letter. Seeded from
      whatever they sent on an earlier visit. */
@@ -226,6 +248,26 @@ export default function CardExperience({ card, live = false, initialReactions = 
     return () => window.clearTimeout(t);
   }, [typedDone]);
 
+  /**
+   * Put the big overlay up, then take it down again.
+   *
+   * It never blocks anything: the overlay is pointer-events:none while it is
+   * there, and it is removed from the tree the moment it is done — a celebration
+   * that eats the "send something back" buttons is not a celebration.
+   */
+  const firePayoff = useCallback((text) => {
+    if (!text) return;
+    const reduced = prefersReducedMotion();
+    setPayoff({ text, key: Date.now(), reduced });
+    window.clearTimeout(payoffTimer.current);
+    payoffTimer.current = window.setTimeout(
+      () => setPayoff(null),
+      reduced ? PAYOFF_REDUCED_MS : PAYOFF_MS,
+    );
+  }, []);
+
+  useEffect(() => () => window.clearTimeout(payoffTimer.current), []);
+
   /* ---------------------------------------------------- forgiveness */
   /**
    * "Yes" does not simply flip a switch. The meter loads from wherever it had
@@ -233,45 +275,74 @@ export default function CardExperience({ card, live = false, initialReactions = 
    * celebration land — so forgiveness reads as something that happened rather
    * than something that was already true.
    */
+  /* The moment itself lands here — from "Yes ❤️", from the last candle, from
+     "Yes 💍". It records the answer, then hands the meter to the recipient. */
   const handleForgive = useCallback(
     (originEl) => {
-      if (forgiven || forgiving) return;
-      setForgiving(true);
+      if (forgiven || forgiving || pumping) return;
       setTeasing(false);
 
-      /* Record it straight away; the animation is for the eyes, not the data. */
+      /* Record it straight away; the animation is for the eyes, not the data.
+         Whether they finish pumping or wander off, they said yes. */
       if (live) {
         setForgiven(card.id).catch(() => {});
       }
 
-      const finish = () => {
-        fillRaf.current = null;
-        setMeter(METER_FULL);
+      /* A short "here we go" beat, then the meter drops to its starting notch
+         and waits to be tapped. Dropping it is the point: a bar that is already
+         nearly full has nothing to give them to do. */
+      setForgiving(true);
+      pumpTapsRef.current = 0;
+      setPumpTaps(0);
+      if (originEl) burstFrom(originEl, 10);
+
+      const begin = () => {
         setForgiving(false);
-        setForgivenState(true);
-        celebrate(originEl);
+        setMeter(PUMP_START);
+        setPumping(true);
       };
 
       if (prefersReducedMotion()) {
-        setMeter(METER_FULL);
-        fillTimer.current = window.setTimeout(finish, 150);
+        begin();
         return;
       }
-
-      const from = meterRef.current;
-      const startedAt = performance.now();
-      const step = (now) => {
-        const t = Math.min(1, (now - startedAt) / FORGIVE_FILL_MS);
-        setMeter(from + (METER_FULL - from) * loadEase(t));
-        if (t < 1) {
-          fillRaf.current = requestAnimationFrame(step);
-          return;
-        }
-        finish();
-      };
-      fillRaf.current = requestAnimationFrame(step);
+      fillTimer.current = window.setTimeout(begin, 420);
     },
-    [forgiven, forgiving, live, card.id],
+    [forgiven, forgiving, pumping, live, card.id],
+  );
+
+  /**
+   * One pump. Adds a random 12–18% (a fixed, bigger step under reduced motion so
+   * three taps do it), puffs hearts where the finger landed, and when the bar
+   * tops out runs the celebration plus the full dramatic payoff.
+   */
+  const handlePump = useCallback(
+    (point) => {
+      if (!pumping) return;
+      const reduced = prefersReducedMotion();
+      const step = reduced
+        ? Math.ceil((METER_FULL - PUMP_START) / PUMP_REDUCED_TAPS)
+        : PUMP_MIN + Math.random() * (PUMP_MAX - PUMP_MIN);
+
+      pumpTapsRef.current += 1;
+      setPumpTaps(pumpTapsRef.current);
+
+      const next = Math.min(METER_FULL, meterRef.current + step);
+      meterRef.current = next;
+      setMeter(next);
+
+      if (point && !reduced) {
+        burstGlyphs(point.x, point.y, { count: 6, rise: true, min: 12, max: 24 });
+      }
+
+      if (next >= METER_FULL) {
+        setPumping(false);
+        setForgivenState(true);
+        celebrate(point ? point.el : null);
+        firePayoff(occasion.meter.payoff);
+      }
+    },
+    [pumping, firePayoff, occasion],
   );
 
   /**
@@ -393,6 +464,9 @@ export default function CardExperience({ card, live = false, initialReactions = 
               teasing={teasing}
               full={forgiven}
               loading={forgiving}
+              pumping={pumping}
+              pumpTaps={pumpTaps}
+              onPump={handlePump}
             />
 
             {/* `letter--stickered` reserves the top/bottom sticker band (see globals.css)
@@ -465,7 +539,7 @@ export default function CardExperience({ card, live = false, initialReactions = 
               ) : null}
 
               {/* Their turn to play with something. Purely local — see below. */}
-              {typedDone ? <CardCutenessMeter card={card} /> : null}
+              {typedDone ? <CardCutenessMeter card={card} onOverload={firePayoff} /> : null}
 
               {/* …and anything the recipient has sent back, stuck on live. */}
               {stuckBack.length ? (
@@ -500,6 +574,9 @@ export default function CardExperience({ card, live = false, initialReactions = 
                   severity={card.severity}
                   done={forgiven}
                   working={forgiving}
+                  pumping={pumping}
+                  pumpTaps={pumpTaps}
+                  onPump={handlePump}
                   meterValue={meter}
                   onComplete={handleForgive}
                   onProgress={handleBoost}
@@ -511,6 +588,9 @@ export default function CardExperience({ card, live = false, initialReactions = 
                   fromName={card.from_name}
                   forgiven={forgiven}
                   forgiving={forgiving}
+                  pumping={pumping}
+                  pumpTaps={pumpTaps}
+                  onPump={handlePump}
                   meterValue={meter}
                   onForgive={handleForgive}
                   onNo={handleNo}
@@ -536,15 +616,23 @@ export default function CardExperience({ card, live = false, initialReactions = 
                 <p className="replyback__sub">{occasion.reply.sub}</p>
                 <ShareRow
                   text={occasion.reply.shareText}
-                  url={pageUrl}
+                  url={replyUrl || pageUrl}
                   channels={['native', 'whatsapp', 'telegram', 'sms', 'copy']}
-                  hint={`When ${card.from_name} opens this on their own phone, Truce shows them the way back to their private page — so even if they lost that link, this is how they find your reply.`}
+                  hint={
+                    hashMode
+                      ? `This card lives entirely in its own link, so there is no separate reply page for it — sending this back is what tells ${card.from_name} you opened it.`
+                      : `This opens a little page just for ${card.from_name}: that you opened it, that you said yes, and everything you sent back.`
+                  }
                 />
               </div>
             ) : null}
           </section>
         )}
       </div>
+
+      {payoff ? (
+        <PayoffOverlay key={payoff.key} text={payoff.text} reduced={payoff.reduced} stickers={stickers} />
+      ) : null}
 
       <div className="cardapp__foot">
         <Link href="/">Made with Truce 🤍 Make your own</Link>
@@ -575,34 +663,165 @@ function meterLabel(meter, value, teasing, full) {
   return meter.idle;
 }
 
-function MomentMeter({ occasion, value, teasing, full, loading = false }) {
+function MomentMeter({
+  occasion,
+  value,
+  teasing,
+  full,
+  loading = false,
+  pumping = false,
+  pumpTaps = 0,
+  onPump,
+}) {
   const meter = occasion.meter;
-  const label = loading ? meter.loading : meterLabel(meter, value, teasing, full);
   const pct = Math.max(0, Math.min(100, value));
+
+  /* While they are pumping, the label escalates with every tap instead of
+     describing a value — "keep going…", "more…", "so close!!". */
+  const pumpLabels = meter.pumpLabels || [];
+  const label = pumping
+    ? pumpLabels[Math.min(pumpTaps, pumpLabels.length - 1)] || meter.pump
+    : loading
+      ? meter.loading
+      : meterLabel(meter, value, teasing, full);
+
+  const className = [
+    'meter',
+    teasing ? 'is-teasing' : '',
+    pct >= METER_FULL && !loading ? 'is-full' : '',
+    loading ? 'is-loading' : '',
+    pumping ? 'is-pumping' : '',
+  ]
+    .filter(Boolean)
+    .join(' ');
+
+  const bar = (
+    <>
+      <span className="meter__fill" style={{ width: `${pct}%` }} />
+      <span className="meter__heart" style={{ left: `${pct}%` }} aria-hidden="true">
+        💗
+      </span>
+    </>
+  );
+
+  const handlePump = (e) => {
+    e.stopPropagation();
+    if (!onPump) return;
+    let x = e.clientX;
+    let y = e.clientY;
+    if (!x && !y) {
+      const r = e.currentTarget.getBoundingClientRect();
+      x = r.left + r.width / 2;
+      y = r.top + r.height / 2;
+    }
+    onPump({ x, y, el: e.currentTarget });
+  };
+
   return (
-    <div
-      className={`meter${teasing ? ' is-teasing' : ''}${pct >= METER_FULL && !loading ? ' is-full' : ''}${
-        loading ? ' is-loading' : ''
-      }`}
-    >
+    <div className={className}>
       <div className="meter__head">
         <span className="meter__title">{meter.title}</span>
         <span className="meter__label">{label}</span>
       </div>
-      <div
-        className="meter__track"
-        role="progressbar"
-        aria-label={meter.ariaLabel}
-        aria-valuemin={0}
-        aria-valuemax={100}
-        aria-valuenow={Math.round(pct)}
-        aria-valuetext={label}
-      >
-        <span className="meter__fill" style={{ width: `${pct}%` }} />
-        <span className="meter__heart" style={{ left: `${pct}%` }} aria-hidden="true">
-          💗
-        </span>
-      </div>
+
+      {pumping ? (
+        /* A real <button>, so a keyboard can pump it too. The progress value
+           lives in the accessible name — a progressbar inside a button would
+           only get in the way. */
+        <button
+          type="button"
+          className="meter__track meter__track--pump"
+          onClick={handlePump}
+          aria-label={`${meter.ariaLabel}, ${Math.round(pct)} percent. Tap to fill it up.`}
+        >
+          {bar}
+        </button>
+      ) : (
+        <div
+          className="meter__track"
+          role="progressbar"
+          aria-label={meter.ariaLabel}
+          aria-valuemin={0}
+          aria-valuemax={100}
+          aria-valuenow={Math.round(pct)}
+          aria-valuetext={label}
+        >
+          {bar}
+        </div>
+      )}
+
+      {pumping ? <p className="meter__pump">{meter.pump}</p> : null}
+    </div>
+  );
+}
+
+/* ==========================================================================
+   The payoff — the moment something goes all the way
+   --------------------------------------------------------------------------
+   Used twice: when the cuteness meter is tapped past 120%, and when the
+   forgiveness / birthday / butterflies meter is pumped to the top. Big wobbling
+   words, a rain of the card's own stickers, and then it gets out of the way.
+
+   Two rules it must never break:
+     - pointer-events:none the whole time, and unmounted when it is done, so it
+       cannot swallow a tap meant for "Send something back";
+     - with reduced motion it is a still frame — no wobble, no rain, no drift.
+   ========================================================================== */
+
+/** 8–12 stickers to rain, drawn from the packs the sender actually used. */
+function rainStickers(cardStickers) {
+  const pool = [];
+  const packIds = [];
+  for (const id of cardStickers || []) {
+    const meta = getSticker(id);
+    if (!meta) continue;
+    const pack = PACKS.find((pk) => pk.stickers.some((st) => st.id === id));
+    if (pack && !packIds.includes(pack.id)) {
+      packIds.push(pack.id);
+      pool.push(...pack.stickers.map((st) => st.id));
+    }
+  }
+  /* A card with no stickers still deserves a party. */
+  const source = pool.length ? pool : STICKERS.map((st) => st.id);
+  const count = 8 + Math.floor(Math.random() * 5); // 8–12
+  const out = [];
+  for (let i = 0; i < count; i += 1) {
+    out.push(source[Math.floor(Math.random() * source.length)]);
+  }
+  return out;
+}
+
+function PayoffOverlay({ text, reduced = false, stickers = [] }) {
+  /* Chosen once per appearance of the overlay, never on re-render. */
+  const [rain] = useState(() => (reduced ? [] : rainStickers(stickers)));
+
+  return (
+    <div className={`payoff${reduced ? ' payoff--still' : ''}`} aria-hidden="true">
+      {rain.length ? (
+        <div className="payoff__rain">
+          {rain.map((id, i) => (
+            <span
+              key={`${id}-${i}`}
+              className="payoff__drop"
+              style={{
+                left: `${4 + (i * 92) / rain.length + Math.random() * 6}%`,
+                animationDelay: `${(i * 90 + Math.random() * 160).toFixed(0)}ms`,
+                animationDuration: `${(1900 + Math.random() * 700).toFixed(0)}ms`,
+                '--spin': `${Math.round(Math.random() * 120 - 60)}deg`,
+              }}
+            >
+              <Sticker id={id} size={54 + Math.round(Math.random() * 26)} />
+            </span>
+          ))}
+        </div>
+      ) : null}
+
+      <p className="payoff__text">{text}</p>
+
+      {/* Announced once, calmly, for anyone not watching the fireworks. */}
+      <p className="sr-only" role="status">
+        {text}
+      </p>
     </div>
   );
 }
@@ -619,7 +838,7 @@ function MomentMeter({ occasion, value, teasing, full, loading = false }) {
    never be mistaken for "skip the typewriter" or "tap the paper".
    ========================================================================== */
 
-function CardCutenessMeter({ card }) {
+function CardCutenessMeter({ card, onOverload }) {
   const [start] = useState(() => cardCutenessStart(card));
   const [score, setScore] = useState(start);
   /* Mirrors `score` so the tap handler can do its arithmetic (and its one-off
@@ -651,8 +870,12 @@ function CardCutenessMeter({ card }) {
 
     if (next >= CUTENESS_MAX && !brokenRef.current) {
       brokenRef.current = true;
-      /* It gave everything it had. */
+      /* It gave everything it had — and that deserves the whole show. */
       burstGlyphs(x, y, { count: 20, rise: true, min: 18, max: 42 });
+      if (!prefersReducedMotion()) {
+        window.setTimeout(() => burstGlyphs(x, y - 40, { count: 14, rise: true, min: 14, max: 34 }), 260);
+      }
+      if (onOverload) onOverload('CUTENESS OVERLOAD 🚨🧸💘');
     } else {
       burstGlyphs(x, y, { count: 5, min: 11, max: 20 });
     }
@@ -681,6 +904,58 @@ function CardCutenessMeter({ card }) {
         {broken ? 'You broke it. Well done, honestly. 🚨' : 'Tap it. Go on — see how far it goes.'}
       </span>
     </button>
+  );
+}
+
+
+/**
+ * The pump panel, mirrored under the question.
+ *
+ * The meter itself lives at the top of the scene — on a phone that is a screen
+ * and a half away by the time the moment happens, so the thing they are asked
+ * to tap has to be right here, under their thumb, as well as up there.
+ */
+function PumpPanel({ occasion, value, taps, onPump }) {
+  const pct = Math.max(0, Math.min(100, value));
+  const labels = occasion.meter.pumpLabels || [];
+  const nudge = labels[Math.min(taps, labels.length - 1)] || '';
+
+  const tap = (e) => {
+    e.stopPropagation();
+    if (!onPump) return;
+    let x = e.clientX;
+    let y = e.clientY;
+    if (!x && !y) {
+      const r = e.currentTarget.getBoundingClientRect();
+      x = r.left + r.width / 2;
+      y = r.top + r.height / 2;
+    }
+    onPump({ x, y, el: e.currentTarget });
+  };
+
+  return (
+    <div className="forgive">
+      <h3>{occasion.momentQuestion}</h3>
+      <div className="pumpbox">
+        <button
+          type="button"
+          className="pumpbox__btn"
+          onClick={tap}
+          aria-label={`${occasion.meter.ariaLabel}, ${Math.round(pct)} percent. Tap to fill it up.`}
+        >
+          <span className="pumpbox__heart" aria-hidden="true">
+            💗
+          </span>
+          <span className="pumpbox__track" aria-hidden="true">
+            <span className="pumpbox__fill" style={{ width: `${pct}%` }} />
+          </span>
+          <span className="pumpbox__cta">{occasion.meter.pump}</span>
+        </button>
+        <p className="pumpbox__nudge" aria-live="polite">
+          {taps > 0 ? nudge : ''}
+        </p>
+      </div>
+    </div>
   );
 }
 
@@ -745,9 +1020,12 @@ function ForgiveBlock({
   fromName,
   forgiven,
   forgiving = false,
+  pumping = false,
+  pumpTaps = 0,
   meterValue = 0,
   onForgive,
   onNo,
+  onPump,
 }) {
   /* "No 😤 → Are you sure? → … → Okay fine… yes 🤍" for an apology; a softer
      script for a proposal. Same machinery, same surrender. */
@@ -992,6 +1270,10 @@ function ForgiveBlock({
      The forgiveness meter itself lives at the top of the scene, which on a
      phone is a screen and a half away by now, so the same value is mirrored
      here: the payoff has to happen where they are actually looking. */
+  if (pumping) {
+    return <PumpPanel occasion={occasion} value={meterValue} taps={pumpTaps} onPump={onPump} />;
+  }
+
   if (forgiving) {
     const pct = Math.max(0, Math.min(100, meterValue));
     return (
@@ -1146,6 +1428,9 @@ function CandleMoment({
   severity,
   done,
   working = false,
+  pumping = false,
+  pumpTaps = 0,
+  onPump,
   meterValue = 0,
   onComplete,
   onProgress,
@@ -1195,6 +1480,10 @@ function CandleMoment({
     }
     if (onProgress) onProgress();
   };
+
+  if (pumping) {
+    return <PumpPanel occasion={occasion} value={meterValue} taps={pumpTaps} onPump={onPump} />;
+  }
 
   if (working) {
     const pct = Math.max(0, Math.min(100, meterValue));

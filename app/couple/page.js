@@ -21,8 +21,19 @@ export const metadata = {
   robots: { index: false, follow: false },
 };
 
-export default async function CouplePage() {
+/* Things that can go wrong between "make our corner" and the room actually
+   opening. Each one gets a sentence a person can act on. */
+const DOOR_ERRORS = {
+  cookie:
+    'Your corner was made, but this browser did not keep the sign-in. Enter it below with the same name and password — and check that cookies are allowed for this site.',
+  lookup:
+    'Your corner was made, but we could not read it back just now. Give it a moment and enter it below.',
+};
+
+export default async function CouplePage({ searchParams }) {
   const configured = isSupabaseConfigured();
+  const params = (await searchParams) || {};
+  const doorError = DOOR_ERRORS[params.err] || '';
 
   /* Already signed in? Go straight in. */
   if (configured) {
@@ -52,67 +63,30 @@ export default async function CouplePage() {
           </span>
           <h1>A room with one door and two keys.</h1>
           <p className="panel__sub">
-            Our corner is a tiny private room for two. No accounts, no phone numbers, no app — just
-            a page you can both open whenever you need to say something.
+            A tiny private room for two. Pick a name and a password together, you both type the
+            same pair, and you are in — no accounts, no numbers, no app.
           </p>
-
-          {/* How it works, in the order it actually happens. Three steps is the
-              whole of it, and saying so up front is what stops people bouncing
-              off a name-and-password box they do not recognise. */}
-          <ol className="corner-how">
-            <li>
-              <span className="corner-how__num">1</span>
-              <span>
-                <b>Pick a room name and a password together.</b> Anything you will both remember —
-                an inside joke works better than a good password here.
-              </span>
-            </li>
-            <li>
-              <span className="corner-how__num">2</span>
-              <span>
-                <b>You both enter the same pair.</b> That is the whole key. Whoever has both is in;
-                nobody else is, and there is no list of rooms to browse.
-              </span>
-            </li>
-            <li>
-              <span className="corner-how__num">3</span>
-              <span>
-                <b>It stays open for 30 days.</b> Signed in on each device, so it is there at 2am
-                without a login dance.
-              </span>
-            </li>
-          </ol>
-
-          <p className="corner-for">
-            <b>What it is for:</b> the moments one of you is blocked everywhere else and still has
-            something to say. 💙
+          <p className="panel__sub">
+            It stays open for 30 days on each device, so it is there at 2am without a login dance.
           </p>
-
-          <ul className="corner-points">
-            <li>
-              <b>Nothing to install.</b> It is a web page. It works on the phone you already have.
-            </li>
-            <li>
-              <b>Not indexed, not listed.</b> Rooms are found by knowing the name and the password,
-              never by searching.
-            </li>
-            <li>
-              <b>Free while in beta.</b> Like the rest of Truce. 🤍
-            </li>
-          </ul>
-
-          <p className="corner-honest">
-            <b>Being straight with you:</b> this is a shared-secret room, and it is{' '}
-            <b>not end-to-end encrypted</b>. Your messages are stored on our server so the other one
-            of you can read them later, which means we could technically read them too. Treat it
-            like a note passed in class — lovely, private from the world, but please don&rsquo;t
-            reuse an important password here, and don&rsquo;t put anything in it you would be
-            devastated to lose.
+          <p className="panel__sub">
+            For the moments one of you is blocked everywhere else and still has something to say. 💙
           </p>
         </div>
 
+        {doorError ? (
+          <p className="corner-door-error" role="alert">
+            {doorError}
+          </p>
+        ) : null}
+
         {configured ? (
-          <CoupleForms />
+          <>
+            <CoupleForms initialError={doorError} />
+            <p className="corner-note">
+              Private room, shared password — not end-to-end encrypted.
+            </p>
+          </>
         ) : (
           <div className="panel">
             <h2>Not switched on yet</h2>

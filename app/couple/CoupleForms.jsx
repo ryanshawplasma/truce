@@ -11,6 +11,16 @@ import { createRoom, joinRoom } from './actions';
  * trusted by the server.
  */
 
+/**
+ * A server action that succeeds by redirecting throws a NEXT_REDIRECT signal.
+ * If a catch block eats it, the navigation never happens and a corner that was
+ * created perfectly well looks like a failure. So: rethrow it, always.
+ */
+function rethrowIfRedirect(err) {
+  const digest = err && typeof err.digest === 'string' ? err.digest : '';
+  if (digest.startsWith('NEXT_REDIRECT') || digest === 'NEXT_NOT_FOUND') throw err;
+}
+
 const SIDES = [
   /* Both sides see their OWN messages on the right — the number only tells the
      two of you apart, so the hints have to say that rather than describing an
@@ -19,8 +29,8 @@ const SIDES = [
   { value: 2, label: 'I am the second one', hint: 'pick this if they set it up' },
 ];
 
-export default function CoupleForms() {
-  const [mode, setMode] = useState('join'); // join | create
+export default function CoupleForms({ initialError = '' }) {
+  const [mode, setMode] = useState(initialError ? 'join' : 'join'); // join | create
 
   return (
     <div className="panel">
@@ -45,7 +55,7 @@ export default function CoupleForms() {
         </button>
       </div>
 
-      {mode === 'join' ? <JoinForm /> : <CreateForm />}
+      {mode === 'join' ? <JoinForm initialError={initialError} /> : <CreateForm />}
     </div>
   );
 }
@@ -75,11 +85,11 @@ function SidePicker({ side, onChange }) {
   );
 }
 
-function JoinForm() {
+function JoinForm({ initialError = '' }) {
   const [name, setName] = useState('');
   const [password, setPassword] = useState('');
   const [side, setSide] = useState(1);
-  const [error, setError] = useState('');
+  const [error, setError] = useState(initialError);
   const [busy, setBusy] = useState(false);
   const busyRef = useRef(false);
 
@@ -92,9 +102,10 @@ function JoinForm() {
     try {
       /* On success the action redirects us into the room and never returns a
          value — so the only thing that comes back here is a refusal. */
-      const res = await joinRoom({ name, password, side });
+      const res = await joinRoom({ name: name.trim(), password, side });
       if (res && !res.ok) setError(res.error || 'That did not work.');
-    } catch {
+    } catch (err) {
+      rethrowIfRedirect(err);
       setError('Could not reach the server. Try again in a moment.');
     } finally {
       busyRef.current = false;
@@ -139,7 +150,7 @@ function JoinForm() {
 
       <SidePicker side={side} onChange={setSide} />
 
-      <p className="err">{error}</p>
+      <p className="err" role="alert" aria-live="polite">{error}</p>
       <button type="submit" className="btn btn--primary btn--wide btn--lg" disabled={busy}>
         {busy ? (
           <>
@@ -159,6 +170,7 @@ function CreateForm() {
   const [anniversary, setAnniversary] = useState('');
   const [side, setSide] = useState(1);
   const [error, setError] = useState('');
+  const [badField, setBadField] = useState('');
   const [busy, setBusy] = useState(false);
   const busyRef = useRef(false);
 
@@ -168,11 +180,27 @@ function CreateForm() {
     busyRef.current = true;
     setBusy(true);
     setError('');
+    setBadField('');
     try {
-      /* Same as joining: success redirects, so anything returned is a refusal. */
-      const res = await createRoom({ name, password, anniversary, side });
-      if (res && !res.ok) setError(res.error || 'That did not work.');
-    } catch {
+      /* Same as joining: success redirects, so anything returned is a refusal.
+
+         `anniversary` is optional, and an empty date input hands us ''. Postgres
+         will not take '' for a `date` column — it refuses the whole insert — so
+         it becomes null here as well as on the server. Belt and braces on
+         purpose: this exact value is what broke card-corner creation in
+         production while every local test passed. */
+      const res = await createRoom({
+        name: name.trim(),
+        password,
+        anniversary: anniversary && anniversary.trim() ? anniversary.trim() : null,
+        side,
+      });
+      if (res && !res.ok) {
+        setError(res.error || 'That did not work.');
+        setBadField(res.field || '');
+      }
+    } catch (err) {
+      rethrowIfRedirect(err);
       setError('Could not reach the server. Try again in a moment.');
     } finally {
       busyRef.current = false;
@@ -190,7 +218,7 @@ function CreateForm() {
       <div className="field">
         <label htmlFor="newName">Corner name</label>
         <input
-          className="input"
+          className={`input${badField === 'name' ? ' is-invalid' : ''}`}
           id="newName"
           type="text"
           autoComplete="off"
@@ -207,7 +235,7 @@ function CreateForm() {
       <div className="field">
         <label htmlFor="newPass">Password</label>
         <input
-          className="input"
+          className={`input${badField === 'password' ? ' is-invalid' : ''}`}
           id="newPass"
           type="password"
           autoComplete="new-password"
@@ -224,7 +252,7 @@ function CreateForm() {
           Together since <span style={{ fontWeight: 600, color: 'var(--plum-soft)' }}>(optional)</span>
         </label>
         <input
-          className="input"
+          className={`input${badField === 'anniversary' ? ' is-invalid' : ''}`}
           id="newAnn"
           type="date"
           value={anniversary}
@@ -235,7 +263,7 @@ function CreateForm() {
 
       <SidePicker side={side} onChange={setSide} />
 
-      <p className="err">{error}</p>
+      <p className="err" role="alert" aria-live="polite">{error}</p>
       <button type="submit" className="btn btn--primary btn--wide btn--lg" disabled={busy}>
         {busy ? (
           <>

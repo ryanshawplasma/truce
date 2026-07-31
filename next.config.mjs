@@ -8,6 +8,8 @@ const nextConfig = {
   outputFileTracingIncludes: {
     '/c/[id]': ['./assets/**'],
     '/c/[id]/opengraph-image': ['./assets/**'],
+    '/r/[id]': ['./assets/**'],
+    '/r/[id]/opengraph-image': ['./assets/**'],
   },
 
   /**

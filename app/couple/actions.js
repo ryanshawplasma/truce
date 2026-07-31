@@ -56,13 +56,13 @@ const NO_DB = 'Our corner is not switched on for this site yet — it needs some
  */
 const JOIN_PER_ROOM = 5;      // attempts / minute against one room name
 const JOIN_PER_IP = 20;       // attempts / minute from one address, any room
-const CREATE_PER_IP = 5;      // new rooms / minute from one address
+const CREATE_PER_IP = 12;     // new rooms / minute from one address
 const WINDOW_MS = 60 * 1000;
 
 /* Every failed join costs at least this long, whatever went wrong. */
 const MIN_FAIL_MS = 250;
 
-const TOO_MANY = 'Too many tries just now — give it a minute 🤍';
+const TOO_MANY = 'That was a lot of tries at once — wait about a minute and try again 🤍';
 
 /** Hold the answer until it has taken a uniform amount of time, plus backoff. */
 async function uniformFail(startedAt, strikes) {
@@ -79,15 +79,33 @@ async function currentSession() {
   return readSessionToken(raw.value);
 }
 
-/** The room this browser is signed into, or null. Used by the room page. */
-export async function getSession() {
+/**
+ * The room this browser is signed into.
+ *
+ * Returns { session } when signed in, { session: null } when not, and
+ * { session: null, failed: true } when the LOOKUP broke rather than the room
+ * being absent.
+ *
+ * That third case is the one that caused a production mystery: a failed read
+ * used to be indistinguishable from "no such room", so /couple/room bounced
+ * straight back to /couple and a corner that had just been created looked like
+ * it had never been made. A read failure must never be mistaken for a fact.
+ */
+export async function getSessionState() {
   const session = await currentSession();
-  if (!session) return null;
+  if (!session) return { session: null };
 
-  const room = await findRoomById(session.roomId);
-  if (!room) return null; // deleted room, or a token signed with an old secret
+  const found = await findRoomById(session.roomId);
+  if (found.failed) return { session: null, failed: true, category: found.category };
+  if (!found.room) return { session: null }; // deleted room, or an old signing secret
 
-  return { room, side: session.side };
+  return { session: { room: found.room, side: session.side } };
+}
+
+/** Convenience wrapper for callers that only care whether we are signed in. */
+export async function getSession() {
+  const { session } = await getSessionState();
+  return session;
 }
 
 async function startSession(roomId, side) {
@@ -108,7 +126,11 @@ async function startSession(roomId, side) {
  */
 async function enterRoom(roomId, side) {
   await startSession(roomId, side);
-  redirect('/couple/room');
+  /* `?new=1` is a breadcrumb, not state. If the room page finds no session it
+     can tell the difference between "someone typed the URL" (send them to the
+     door quietly) and "we JUST signed them in and the cookie did not survive"
+     — which deserves an explanation instead of a blank form. */
+  redirect('/couple/room?new=1');
 }
 
 export async function leaveRoom() {
@@ -144,16 +166,32 @@ export async function createRoom(input) {
   /* Check first for a friendly message; the unique index is what actually
      guarantees it (two people could press create at the same instant). */
   const existing = await findRoomByName(nameCheck.name);
-  if (existing) {
+  if (existing.failed) {
+    /* The lookup itself broke. Saying "that name is free" here would be a
+       guess, and saying nothing at all is what made this bug invisible. */
+    return {
+      ok: false,
+      field: 'name',
+      error:
+        existing.category === 'schema'
+          ? 'This site is not finished being set up — its database is missing the bit that stores corners.'
+          : 'We could not reach the database just now. Please try again in a moment.',
+    };
+  }
+  if (existing.room) {
     return { ok: false, error: 'That name is already taken. Try another one.', field: 'name' };
   }
 
   const created = await insertRoom({
     name: nameCheck.name,
     password: passCheck.password,
-    anniversary: annCheck.anniversary,
+    /* Normalised to a YYYY-MM-DD string or null — never ''. See the note in
+       insertRoom: '' is not a date and Postgres refuses the whole insert. */
+    anniversary: annCheck.anniversary ?? null,
   });
-  if (created.error) return { ok: false, error: created.error, field: 'name' };
+  if (created.error) {
+    return { ok: false, error: created.error, field: created.field || 'name' };
+  }
 
   await enterRoom(created.id, side); // throws to redirect — nothing after this runs
 }
@@ -196,7 +234,22 @@ export async function joinRoom(input) {
   const password = String((input && input.password) || '');
   if (!password) return fail();
 
-  const room = await findRoomByName(nameCheck.name);
+  const found = await findRoomByName(nameCheck.name);
+  /* A broken lookup is not a wrong password. Telling someone their password is
+     wrong when the database simply did not answer sends them off to "fix"
+     something that was never broken. This answer reveals nothing about whether
+     the room exists, so the timing game is still safe. */
+  if (found.failed) {
+    await uniformFail(startedAt, 0);
+    return {
+      ok: false,
+      error:
+        found.category === 'schema'
+          ? 'This site is not finished being set up — corners have nowhere to live yet.'
+          : 'We could not reach the database just now. Please try again in a moment.',
+    };
+  }
+  const room = found.room;
   if (!room) return fail();
 
   const good = await verifyPassword(password, room.pass_hash, room.pass_salt);

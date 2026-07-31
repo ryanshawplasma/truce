@@ -3,7 +3,7 @@ import CardExperience from '@/app/components/CardExperience';
 import LockedCard from '@/app/components/LockedCard';
 import LocalCard from './LocalCard';
 import { getCardById, getReactionsByCardId } from '@/lib/cards';
-import { metadataBase } from '@/lib/site';
+import { metadataBase, siteOrigin } from '@/lib/site';
 import { SAMPLE_CARD, isSealed } from '@/lib/constants';
 import { getOccasion, fill } from '@/lib/occasions';
 
@@ -35,14 +35,36 @@ export async function generateMetadata({ params }) {
   /* Private links should never show up in search results. */
   const robots = { index: false, follow: false };
   const base = await metadataBase();
+  const origin = await siteOrigin();
+
+  /* Spelled out rather than left to the file convention: several scrapers
+     (WhatsApp and iMessage among them) will not render an og:image without an
+     absolute URL and explicit dimensions, which is why the reply link used to
+     unfurl better than the card link it was born from. Both are first-class
+     now — keep this in step with app/r/[id]/page.js. */
+  const image = {
+    url: `${origin}/c/${id}/opengraph-image`,
+    width: 1200,
+    height: 630,
+    type: 'image/png',
+    alt: 'A sealed envelope waiting to be opened — a card from Truce',
+  };
 
   const build = (title, description) => ({
     metadataBase: base,
     title,
     description,
     robots,
-    openGraph: { title, description, type: 'website', siteName: 'Truce' },
-    twitter: { card: 'summary_large_image', title, description },
+    alternates: { canonical: `${origin}/c/${id}` },
+    openGraph: {
+      title,
+      description,
+      type: 'website',
+      siteName: 'Truce',
+      url: `${origin}/c/${id}`,
+      images: [image],
+    },
+    twitter: { card: 'summary_large_image', title, description, images: [image.url] },
   });
 
   if (id === 'local') {
