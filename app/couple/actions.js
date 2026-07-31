@@ -6,14 +6,24 @@ import { isSupabaseConfigured } from '@/lib/supabase';
 import { backoffMs, clientKey, sleep, strike, take } from '@/lib/throttle';
 import { tidyAndTruncate } from '@/lib/truncate';
 import {
+  MEDIA_CAPTION_MAX,
+  MEDIA_SETUP_MESSAGE,
+  MEDIA_THROTTLE_MESSAGE,
+  MEDIA_UPLOADS_PER_HOUR,
+  isPlausibleMediaPath,
+} from '@/lib/media';
+import {
   COUPLE_COOKIE,
   MAX_MESSAGE_LENGTH,
+  attachMediaUrls,
+  createMediaUploadTicket,
   createSessionToken,
   findRoomById,
   findRoomByName,
   insertMessage,
   insertRoom,
   listMessages,
+  listRoomMedia,
   normaliseAnniversary,
   normalisePassword,
   normaliseRoomName,
@@ -284,16 +294,32 @@ function pruneLastSent(now) {
   }
 }
 
-export async function sendMessage(body) {
+export async function sendMessage(body, mediaPath = null) {
   if (!isSupabaseConfigured()) return { ok: false, error: NO_DB };
 
   const session = await currentSession();
   if (!session) return { ok: false, error: 'You are signed out — open your corner again.', signedOut: true };
 
+  /* A photo is only attachable if the path is one WE could have issued, inside
+     this caller's own room folder. The browser is told the path by the server a
+     moment earlier, but it is still just a browser saying words. */
+  let media = null;
+  if (mediaPath !== null && mediaPath !== undefined && mediaPath !== '') {
+    if (!isPlausibleMediaPath(String(mediaPath), session.roomId)) {
+      console.error(
+        '[truce] sendMessage: rejected a media_path outside the caller\'s room',
+        JSON.stringify({ room: session.roomId, gaveLength: String(mediaPath).length }),
+      );
+      return { ok: false, error: 'That photo could not be attached.' };
+    }
+    media = String(mediaPath);
+  }
+
   /* Code-point safe: a message ending in an emoji must not be cut in half.
-     See lib/truncate.js for why a plain .slice() breaks the insert. */
-  const text = tidyAndTruncate(String(body == null ? '' : body), MAX_MESSAGE_LENGTH);
-  if (!text) return { ok: false, error: 'Type something first.' };
+     See lib/truncate.js for why a plain .slice() breaks the insert.
+     A photo's caption is much shorter than a message on its own. */
+  const text = tidyAndTruncate(String(body == null ? '' : body), media ? MEDIA_CAPTION_MAX : MAX_MESSAGE_LENGTH);
+  if (!text && !media) return { ok: false, error: 'Type something first.' };
 
   const key = `${session.roomId}:${session.side}`;
   const now = Date.now();
@@ -304,12 +330,52 @@ export async function sendMessage(body) {
   }
   lastSentAt.set(key, now);
 
-  const result = await insertMessage(session.roomId, session.side, text);
+  const result = await insertMessage(session.roomId, session.side, text, media);
   if (result.error) {
     lastSentAt.delete(key); // a failed send should not cost them their turn
+    if (result.setup) return { ok: false, setup: true, error: MEDIA_SETUP_MESSAGE };
     return { ok: false, error: result.error };
   }
-  return { ok: true, message: result.message };
+
+  /* Hand the sender a signed URL straight away so their own photo appears
+     without waiting for the next poll. */
+  const [message] = await attachMediaUrls([result.message]);
+  return { ok: true, message };
+}
+
+/* --------------------------------------------------------------- uploads */
+
+/**
+ * Start a photo upload.
+ *
+ * Returns a one-shot signed URL and the path it belongs to. The path is chosen
+ * here, not by the browser, and always sits under the caller's own room folder.
+ *
+ * The hourly cap is per room-SIDE and lives in memory, like the other limits in
+ * this file: a serverless instance restarting forgets it. It exists to stop an
+ * accidental loop filling a free-tier bucket, not to defeat a determined
+ * person — see the long note in lib/throttle.js.
+ */
+export async function getUploadUrl() {
+  if (!isSupabaseConfigured()) return { ok: false, setup: true, error: MEDIA_SETUP_MESSAGE };
+
+  const session = await currentSession();
+  if (!session) return { ok: false, signedOut: true, error: 'You are signed out — open your corner again.' };
+
+  const gate = take('corner:upload', `${session.roomId}:${session.side}`, MEDIA_UPLOADS_PER_HOUR, 60 * 60 * 1000);
+  if (!gate.ok) return { ok: false, throttled: true, error: MEDIA_THROTTLE_MESSAGE };
+
+  const ticket = await createMediaUploadTicket(session.roomId);
+  if (ticket.error) {
+    /* 'nobucket' is the one the site owner can fix in thirty seconds, and the
+       only one worth putting in front of the people in the room. */
+    if (ticket.error === 'nobucket' || ticket.error === 'nodb') {
+      return { ok: false, setup: true, error: MEDIA_SETUP_MESSAGE };
+    }
+    return { ok: false, error: 'Could not start that upload just now. Try again in a moment.' };
+  }
+
+  return { ok: true, path: ticket.path, signedUrl: ticket.signedUrl, token: ticket.token };
 }
 
 /* -------------------------------------------------------------- getMessages */
@@ -323,5 +389,50 @@ export async function getMessages(sinceId = 0) {
 
   const since = Number.isFinite(Number(sinceId)) ? Math.max(0, Number(sinceId)) : 0;
   const messages = await listMessages(session.roomId, since);
-  return { ok: true, messages };
+  /* Signed download URLs are re-minted on every fetch, so they are never older
+     than the poll that carried them. */
+  return { ok: true, messages: await attachMediaUrls(messages) };
+}
+
+/* ------------------------------------------------------------------ photos */
+
+/** Every photo in the room, newest first — the Gallery. */
+export async function getGallery() {
+  if (!isSupabaseConfigured()) return { ok: false, photos: [] };
+
+  const session = await currentSession();
+  if (!session) return { ok: false, photos: [], signedOut: true };
+
+  const { photos, setup } = await listRoomMedia(session.roomId);
+  if (setup) return { ok: true, setup: true, photos: [] };
+
+  return { ok: true, photos: await attachMediaUrls(photos) };
+}
+
+/**
+ * Re-sign photos the browser already holds.
+ *
+ * A tab left open past the hour has URLs that have expired; rather than showing
+ * a permanently broken tile, the image's own onError asks for a fresh one. Only
+ * ids from the caller's own room can ever come back.
+ */
+export async function refreshMedia(ids) {
+  if (!isSupabaseConfigured()) return { ok: false, messages: [] };
+
+  const session = await currentSession();
+  if (!session) return { ok: false, messages: [], signedOut: true };
+
+  const wanted = new Set(
+    (Array.isArray(ids) ? ids : [])
+      .map((n) => Number(n))
+      .filter((n) => Number.isFinite(n))
+      .slice(0, 50),
+  );
+  if (!wanted.size) return { ok: true, messages: [] };
+
+  const { photos, setup } = await listRoomMedia(session.roomId);
+  if (setup) return { ok: true, setup: true, messages: [] };
+
+  const matched = (photos || []).filter((row) => wanted.has(Number(row.id)));
+  return { ok: true, messages: await attachMediaUrls(matched) };
 }

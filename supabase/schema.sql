@@ -128,10 +128,47 @@ create table if not exists public.couple_messages (
   author     int         not null,
 
   body       text        not null,   -- capped at 600 characters in app/couple/actions.js
+
+  -- A photo sent in the room, stored as its object path inside the private
+  -- `corner-media` bucket: "<roomId>/<nanoid>.jpg". NULL for ordinary messages.
+  -- When a photo has a caption it lives in `body` (capped at 200 characters).
+  media_path text,
+
   created_at timestamptz not null default now()
 );
 
 create index if not exists couple_messages_room_idx on public.couple_messages (room_id, id);
+
+
+-- ============================================================================
+-- PHOTOS — one extra step, in the dashboard rather than in SQL
+-- ----------------------------------------------------------------------------
+-- Photos in Our corner live in Supabase Storage, not in a table. Create the
+-- bucket once:
+--
+--   1. Supabase dashboard → Storage → "New bucket"
+--   2. Name it exactly:  corner-media
+--   3. Leave "Public bucket" switched OFF. It must be PRIVATE.
+--   4. Create it. That's all — do not add any policies.
+--
+-- Why no policies? Same reason the tables below have none. Only the service
+-- role ever touches this bucket, and the service role bypasses storage policies
+-- exactly the way it bypasses RLS. Browsers never hold a key: the server hands
+-- out a one-shot signed URL to upload with, and short-lived (1 hour) signed URLs
+-- to view with. A photo link that gets forwarded stops working within the hour.
+--
+-- Object paths are "<roomId>/<nanoid>.jpg" and the server refuses to record a
+-- path outside the caller's own room folder (see lib/media.js).
+--
+-- If the bucket does not exist, Truce says "Photos need one quick setup step by
+-- the site owner" in the room and logs the reason on the server. Nothing else
+-- breaks — messages, cards and everything else carry on.
+--
+-- FREE TIER: Supabase includes 1GB of storage. Photos are shrunk in the browser
+-- to a 1600px longest edge at roughly 200–800KB each before they are uploaded,
+-- so that is a few thousand photos. Storage → Usage in the dashboard shows where
+-- you are, and you can delete rows/objects by hand at any time.
+-- ============================================================================
 
 
 -- ============================================================================
@@ -181,6 +218,12 @@ drop policy if exists "public read couple_messages" on public.couple_messages;
 -- run this one line once if your `cards` table predates it:
 --
 --   alter table public.cards add column if not exists unlock_at timestamptz;
+--
+-- Photos in Our corner added `media_path`. If your `couple_messages` table was
+-- made before that, run this one line once (safe to run again), then create the
+-- `corner-media` bucket as described above:
+--
+--   alter table public.couple_messages add column if not exists media_path text;
 --
 -- Everything else in this file is already idempotent, so a fresh paste of the
 -- whole thing is fine too.

@@ -1,7 +1,7 @@
 import { redirect } from 'next/navigation';
 import CoupleRoom from './CoupleRoom';
 import { getSessionState } from '../actions';
-import { listMessages } from '@/lib/couple';
+import { attachMediaUrls, listMessages } from '@/lib/couple';
 import { isSupabaseConfigured } from '@/lib/supabase';
 
 /**
@@ -37,7 +37,11 @@ export default async function CoupleRoomPage({ searchParams }) {
     redirect('/couple');
   }
 
-  const messages = await listMessages(session.room.id, 0);
+  /* Sign the photos before the first paint. Polling signs what it fetches, but
+     the rows that arrive with the HTML are the ones nobody polls for — without
+     this the room came back from a reload full of "photo unavailable" tiles
+     until something newer happened to arrive. */
+  const messages = await attachMediaUrls(await listMessages(session.room.id, 0));
 
   return (
     <CoupleRoom

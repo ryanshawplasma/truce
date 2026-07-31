@@ -49,6 +49,10 @@ Free while in beta — no accounts, no payments, no card details.
 - **Our corner** at `/couple` — a tiny private chat room for two, opened with a
   name and a shared password. Made for the moment one of you is blocked
   everywhere else and still has something to say. (Also needs a database.)
+- **Photos in Our corner** *(beta)* — send a picture with the 📷 button, browse
+  every photo in the room with **Gallery 🖼**, tap for a full-screen view. Shrunk
+  in the browser, kept in a private bucket, and only ever shown through signed
+  links that expire in an hour. (Needs one extra setup step — see below.)
 - **Six original sticker packs, 62 stickers** — twelve object stickers plus five
   animal/heart couples (Momo & Pip, Rosie & Plum, Clover & Biscuit, Mochi & Bao,
   Poppy & Truffle), each posed ten ways. Every one is inline SVG drawn by us and
@@ -160,7 +164,30 @@ Supabase is the database that stores the cards.
 
 > **Upgrading an older Truce database?** Paste the same file again. Every
 > statement in it is safe to re-run, and it now includes the `unlock_at` column
-> (time-capsule letters) and the two "Our corner" tables.
+> (time-capsule letters), the two "Our corner" tables, and the `media_path`
+> column that photos need.
+
+### 2b. Create the photo bucket (one minute, optional)
+
+Photos in Our corner need one bucket. Everything else works without it — the
+room simply says *"Photos need one quick setup step by the site owner"* until it
+exists.
+
+1. In Supabase, click **Storage** in the left sidebar.
+2. Click **New bucket**.
+3. Name it **exactly** `corner-media`.
+4. Leave **Public bucket** switched **OFF**. It must be private.
+5. Click **Create bucket**. Don't add any policies — you don't need any.
+
+That's it. Only the server ever touches the bucket, using the `service_role`
+key, which bypasses storage policies the same way it bypasses RLS. Browsers get
+a one-shot signed URL to upload with and a one-hour signed URL to look with, so
+a photo link that gets forwarded to someone else stops working within the hour.
+
+> **Free tier:** Supabase includes **1 GB** of storage. Truce shrinks every
+> photo in the browser before it uploads — longest edge 1600px, JPEG quality
+> ~0.82, typically 200–800 KB — so that is a few thousand photos. **Storage →
+> Usage** in the dashboard shows where you are.
 
 ### 3. Collect your two secret values
 
@@ -358,6 +385,39 @@ column, so no migration is needed.
 
 ---
 
+## Photos in Our corner
+
+The 📷 button next to the message box sends a picture. It is in **beta**, and it
+works like this:
+
+1. **Your phone does the shrinking.** The photo is drawn onto a canvas, resized
+   so its longest edge is 1600px, and saved as a JPEG at about 0.82 quality —
+   dropping the quality further if it is still over ~800 KB. Files over 12 MB and
+   anything that is not an image are refused with a friendly line before any of
+   this starts.
+2. **The server picks where it goes.** It hands back a one-shot signed upload URL
+   for `corner-media/<your room id>/<random>.jpg`. The browser does not get to
+   choose the path, and the server refuses to record a path outside your own
+   room's folder even if the browser tries.
+3. **The bytes go straight to Supabase.** They never pass through the Truce
+   server, which keeps a serverless function from having to hold a photo in
+   memory.
+4. **Looking at them uses one-hour signed URLs**, re-issued every time the room
+   loads or polls. There is no public URL for any photo, ever.
+
+**Gallery 🖼** in the room header shows every photo in the corner, newest first,
+three across on a phone. Tap any photo — in the chat or the gallery — for a
+full-screen view.
+
+**Captions** are the words in the box when you tap 📷; they are capped at 200
+characters. **Limit:** 12 photos an hour per person, which is a politeness limit
+rather than a security one (see the rate-limiting section).
+
+If the bucket has not been made yet, or the `media_path` column is missing, the
+room says one calm sentence and everything else — messages, cards, the lot —
+carries on working. The reason is written to the server log with the exact SQL
+or dashboard step needed to fix it.
+
 ## Our corner: how it works, and what it is not
 
 `/couple` is a shared-secret room. Two people agree on a **name** and a
@@ -377,6 +437,9 @@ it works when every other channel is closed.
   be used to discover which rooms exist.
 - Messages are capped at 600 characters, with a one-per-second soft throttle.
 - Both tables have RLS on with no policies, exactly like `cards`.
+- Photos live in a **private** bucket with no policies. Uploads use one-shot
+  signed URLs at a server-chosen path inside your own room's folder; views use
+  signed URLs that expire in an hour and are re-issued on every fetch.
 
 **What it is not — please read this bit**
 
