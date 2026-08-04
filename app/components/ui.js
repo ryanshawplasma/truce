@@ -153,9 +153,32 @@ export function emojiBurstFrom(el, glyph, count = 14) {
  * costs anything on pages that don't celebrate. Falls back to hearts if the
  * package fails to load for any reason.
  */
+/**
+ * The confetti palette for the appearance the site is currently wearing.
+ *
+ * Read from the --confetti token rather than hardcoded, for the same reason
+ * heartGlyphs() exists: a rose burst over a blue page looks like a bug. The
+ * token is a plain comma-separated list because canvas-confetti wants an array
+ * of colours, not a gradient.
+ */
+function confettiColors() {
+  const fallback = ['#E85D75', '#F2B880', '#FFE4E9', '#8B6BD6', '#FFFFFF'];
+  try {
+    if (typeof document === 'undefined' || !window.getComputedStyle) return fallback;
+    const raw = getComputedStyle(document.documentElement).getPropertyValue('--confetti');
+    const list = String(raw || '')
+      .split(',')
+      .map((c) => c.trim())
+      .filter(Boolean);
+    return list.length ? list : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
 export async function celebrate(originEl) {
   if (prefersReducedMotion()) return;
-  const colors = ['#E85D75', '#F2B880', '#FFE4E9', '#8B6BD6', '#FFFFFF'];
+  const colors = confettiColors();
   try {
     const mod = await import('canvas-confetti');
     const confetti = mod.default;

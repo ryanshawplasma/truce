@@ -13,7 +13,10 @@ const LINKS = [
   { href: '#how', label: 'How it works' },
   { href: '#messages', label: 'Messages' },
   { href: '#pricing', label: 'Pricing' },
-  { href: '/couple', label: 'Our corner 💙', route: true, beta: true },
+  /* `corner` gives it the soft tinted chip in the bar. It is the only link
+     here that goes somewhere private rather than further down the page, and it
+     was disappearing among five anchors that all look the same. */
+  { href: '/couple', label: 'Our corner 💙', route: true, beta: true, corner: true },
   { href: '#faq', label: 'FAQ' },
   { href: '/mine', label: 'My cards', route: true },
 ];
@@ -48,7 +51,7 @@ export default function Nav() {
         <nav className="nav__links" aria-label="Primary">
           {LINKS.map((l) =>
             l.route ? (
-              <Link key={l.href} href={l.href}>
+              <Link key={l.href} href={l.href} className={l.corner ? 'nav__corner' : undefined}>
                 {l.label}
                 {l.beta ? <BetaChip /> : null}
               </Link>
@@ -79,7 +82,12 @@ export default function Nav() {
       <div className={`nav__drawer${menuOpen ? '' : ' hidden'}`} id="navDrawer">
         {LINKS.map((l) =>
           l.route ? (
-            <Link key={l.href} href={l.href} onClick={() => setMenuOpen(false)}>
+            <Link
+              key={l.href}
+              href={l.href}
+              className={l.corner ? 'nav__corner' : undefined}
+              onClick={() => setMenuOpen(false)}
+            >
               {l.label}
               {l.beta ? <BetaChip /> : null}
             </Link>

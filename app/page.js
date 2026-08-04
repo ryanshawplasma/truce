@@ -12,6 +12,7 @@ import { Sticker } from './components/stickers';
 import { STICKER_IDS, STICKER_PACKS } from '@/lib/constants';
 import { getOccasion } from '@/lib/occasions';
 import BetaChip from './components/BetaChip';
+import CornerDemo from './components/CornerDemo';
 import { isSupabaseConfigured } from '@/lib/supabase';
 
 /**
@@ -63,6 +64,25 @@ export default function HomePage() {
               <OccasionRow />
 
               <p className="hero__micro">No app to install · Ready in about 3 minutes · Works on any phone</p>
+
+              {/* The second door. A card is for saying sorry once; a corner is
+                  for the conversation afterwards, and people arriving at 2am
+                  should not have to find it in a nav menu. */}
+              <Link className="hero__corner" href="/couple">
+                <span className="hero__corner-mark" aria-hidden="true">
+                  💙
+                </span>
+                <span className="hero__corner-copy">
+                  <b>
+                    Our corner
+                    <BetaChip />
+                  </b>
+                  <small>A private room for two — one name, one password, no accounts</small>
+                </span>
+                <span className="hero__corner-go" aria-hidden="true">
+                  →
+                </span>
+              </Link>
             </div>
 
             <div className="hero__art" aria-hidden="true">
@@ -85,6 +105,50 @@ export default function HomePage() {
               <Sticker id="bandaged-heart" size={62} className="hero-sticker hero-sticker--1" />
               <Sticker id="puppy-eyes" size={70} className="hero-sticker hero-sticker--2" />
               <Sticker id="love-letter" size={54} className="hero-sticker hero-sticker--3" />
+            </div>
+          </div>
+        </section>
+
+        {/* --------------------------------------------------------- Doors */}
+        {/* Truce is two products sharing a front page: a card you send once,
+            and a room you keep. The top of the page only ever offered the
+            first, which made the second effectively a secret — so put both
+            doors where the choice actually gets made. */}
+        <section className="section section--tight doors" id="doors">
+          <div className="wrap">
+            <div className="doors__grid">
+              <CtaButton className="door door--card">
+                <span className="door__mark" aria-hidden="true">
+                  💌
+                </span>
+                <span className="door__eyebrow">Ready in about three minutes</span>
+                <span className="door__title">Send a card</span>
+                <span className="door__body">
+                  A little letter they open in a browser — a real message, stickers, a promise, and
+                  a &ldquo;no&rdquo; button that refuses to be caught.
+                </span>
+                <span className="door__go">
+                  Start your card <span aria-hidden="true">→</span>
+                </span>
+              </CtaButton>
+
+              <Link className="door door--corner" href="/couple">
+                <span className="door__mark" aria-hidden="true">
+                  💙
+                </span>
+                <span className="door__eyebrow">
+                  For everything after
+                  <BetaChip />
+                </span>
+                <span className="door__title">Our corner</span>
+                <span className="door__body">
+                  A private room for two, opened with one name and one password you both know. No
+                  accounts, no numbers, and it stays open for 30 days.
+                </span>
+                <span className="door__go">
+                  Open our corner <span aria-hidden="true">→</span>
+                </span>
+              </Link>
             </div>
           </div>
         </section>
@@ -302,36 +366,43 @@ export default function HomePage() {
                 </span>
                 <h2>Somewhere to talk when everywhere else is closed.</h2>
                 <p>
-                  Our corner is a tiny private room for two, opened with a name and a password you
-                  both agree on — no accounts, no phone numbers, nothing to install. It is for the
-                  moments one of you is blocked everywhere else and still has something to say. It
-                  stays signed in for 30 days, so it is there at 2am.
+                  A card says the thing once. A corner is for everything after it — a tiny private
+                  room for two, opened with a name and a password you both agree on. No accounts, no
+                  phone numbers, nothing to install, and nothing to explain to anybody else.
                 </p>
+
+                <ul className="corner-promo__points">
+                  <li>
+                    <span aria-hidden="true">🔑</span>
+                    <b>One name, one password.</b> You both type the same pair and you are in. That
+                    is the entire setup.
+                  </li>
+                  <li>
+                    <span aria-hidden="true">🌙</span>
+                    <b>Stays open for 30 days.</b> On each device, so it is there at 2am without a
+                    login dance.
+                  </li>
+                  <li>
+                    <span aria-hidden="true">📷</span>
+                    <b>Words and photos.</b> Pictures are shrunk on your phone and kept behind links
+                    that expire within the hour.
+                  </li>
+                </ul>
+
                 <div className="corner-promo__actions">
                   <Link className="btn btn--primary btn--lg" href="/couple">
                     Open our corner 💙
                   </Link>
-                  <Link className="btn btn--ghost btn--lg" href="/couple">
-                    How it works
-                  </Link>
+                  <span className="corner-promo__note">Free · takes about twenty seconds</span>
                 </div>
+
+                <p className="corner-promo__small">
+                  Private room, shared password — not end-to-end encrypted. We say so on the door
+                  too.
+                </p>
               </div>
 
-              <div className="corner-demo" aria-hidden="true">
-                <span className="corner-demo__day">Day 412 together 💙</span>
-                <div className="bubble">
-                  <p className="bubble__body">are you awake?</p>
-                  <span className="bubble__time">02:14</span>
-                </div>
-                <div className="bubble bubble--mine">
-                  <p className="bubble__body">always, for this 🤍</p>
-                  <span className="bubble__time">02:14</span>
-                </div>
-                <div className="bubble">
-                  <p className="bubble__body">ok. can we start over tomorrow?</p>
-                  <span className="bubble__time">02:15</span>
-                </div>
-              </div>
+              <CornerDemo />
             </div>
           </div>
         </section>
