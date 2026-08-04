@@ -97,3 +97,42 @@ test('the limiter fails open rather than locking anybody out', () => {
   assert.equal(take('t', 'k', null, null).ok, true);
   assert.equal(take('t', 'zero', 0, 60_000).ok, false, 'an explicit zero still means zero');
 });
+
+/* ------------------------------------------------------- the SUPABASE_URL trap */
+
+test('SUPABASE_URL is trimmed back to the bare project origin', async () => {
+  /* supabase-js appends /rest/v1 itself. Anything already on the end produces a
+     path PostgREST does not route, and EVERY query dies with PGRST125 —
+     "Invalid path specified in request URL", which reads like the database is
+     down rather than like a settings typo. */
+  const { normaliseSupabaseUrl } = await import('../lib/supabase.js');
+  const want = 'https://abcdefgh.supabase.co';
+
+  for (const given of [
+    'https://abcdefgh.supabase.co',
+    'https://abcdefgh.supabase.co/',
+    'https://abcdefgh.supabase.co///',
+    'https://abcdefgh.supabase.co/rest/v1',
+    'https://abcdefgh.supabase.co/rest/v1/',
+    '  https://abcdefgh.supabase.co/rest/v1  ',
+    'https://abcdefgh.supabase.co/REST/V1',
+  ]) {
+    assert.equal(normaliseSupabaseUrl(given), want, `${JSON.stringify(given)} should normalise`);
+  }
+});
+
+test('an empty or missing SUPABASE_URL stays empty rather than becoming junk', async () => {
+  const { normaliseSupabaseUrl } = await import('../lib/supabase.js');
+  for (const given of ['', '   ', null, undefined]) {
+    assert.equal(normaliseSupabaseUrl(given), '', 'no database configured must stay that way');
+  }
+});
+
+test('PGRST125 is named as a configuration fault, not a mystery', async () => {
+  const { pgCategory } = await import('../lib/supabase.js');
+  assert.equal(pgCategory({ code: 'PGRST125' }), 'config');
+  assert.equal(pgCategory({ code: '42P01' }), 'schema');
+  assert.equal(pgCategory({ code: '23505' }), 'duplicate');
+  assert.equal(pgCategory({ message: 'fetch failed' }), 'network');
+  assert.equal(pgCategory(null), null);
+});

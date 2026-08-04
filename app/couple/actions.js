@@ -43,6 +43,25 @@ import {
 
 const NO_DB = 'Our corner is not switched on for this site yet — it needs somewhere to keep your messages.';
 
+/**
+ * What to say when the database refuses, by cause.
+ *
+ * These are read by somebody trying to open a private room at 2am, so none of
+ * them are error codes — but they do have to be DIFFERENT from each other.
+ * 'config' spent an evening looking exactly like 'network' here, which sent the
+ * site's owner hunting a database that was perfectly healthy. Whoever is
+ * reading cannot fix any of these, but the person they message can, and a
+ * sentence that names the right thing gets there faster.
+ */
+const DB_TROUBLE = {
+  schema:
+    'This site is not finished being set up — its database is missing the bit that stores corners.',
+  config:
+    'This site is pointed at its database incorrectly, so nothing can be saved yet. Whoever runs it needs to check the setup.',
+  auth: 'This site cannot sign in to its own database. Whoever runs it needs to check its keys.',
+  default: 'We could not reach the database just now. Please try again in a moment.',
+};
+
 /* ------------------------------------------------------------------ limits */
 
 /**
@@ -146,10 +165,7 @@ export async function createRoom(input) {
     return {
       ok: false,
       field: 'name',
-      error:
-        existing.category === 'schema'
-          ? 'This site is not finished being set up — its database is missing the bit that stores corners.'
-          : 'We could not reach the database just now. Please try again in a moment.',
+      error: DB_TROUBLE[existing.category] || DB_TROUBLE.default,
     };
   }
   if (existing.room) {
@@ -215,13 +231,7 @@ export async function joinRoom(input) {
      the room exists, so the timing game is still safe. */
   if (found.failed) {
     await uniformFail(startedAt, 0);
-    return {
-      ok: false,
-      error:
-        found.category === 'schema'
-          ? 'This site is not finished being set up — corners have nowhere to live yet.'
-          : 'We could not reach the database just now. Please try again in a moment.',
-    };
+    return { ok: false, error: DB_TROUBLE[found.category] || DB_TROUBLE.default };
   }
   const room = found.room;
   if (!room) return fail();
