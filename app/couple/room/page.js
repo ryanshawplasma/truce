@@ -1,6 +1,6 @@
 import { redirect } from 'next/navigation';
 import CoupleRoom from './CoupleRoom';
-import { getSessionState } from '../actions';
+import { getSessionState } from '@/lib/couple-session';
 import { attachMediaUrls, listMessages } from '@/lib/couple';
 import { isSupabaseConfigured } from '@/lib/supabase';
 

@@ -140,6 +140,24 @@ create table if not exists public.couple_messages (
 create index if not exists couple_messages_room_idx on public.couple_messages (room_id, id);
 
 
+-- ----------------------------------------------------------------------------
+-- Closing a corner takes two people
+-- ----------------------------------------------------------------------------
+-- A corner is shared, so one person cannot delete it alone. Each side asks
+-- separately, with the password, and the room is destroyed only when both asks
+-- are live at the same moment — inside a ten-minute window. One person having
+-- second thoughts, or simply not being at their phone, is enough to stop it.
+--
+-- Two nullable timestamps rather than a table: there are only ever two sides,
+-- the state is tiny, and "both non-null and within ten minutes of each other"
+-- is a condition you can read at a glance in a psql session at 3am.
+--
+-- Clearing either column cancels. Both are cleared after any successful delete
+-- (moot — the row is gone) and whenever a request goes stale.
+alter table public.couple_rooms add column if not exists delete_asked_1 timestamptz;
+alter table public.couple_rooms add column if not exists delete_asked_2 timestamptz;
+
+
 -- ============================================================================
 -- PHOTOS — one extra step, in the dashboard rather than in SQL
 -- ----------------------------------------------------------------------------
@@ -224,6 +242,12 @@ drop policy if exists "public read couple_messages" on public.couple_messages;
 -- `corner-media` bucket as described above:
 --
 --   alter table public.couple_messages add column if not exists media_path text;
+--
+-- Two-key deletion added the two `delete_asked_*` columns. If your
+-- `couple_rooms` table predates it, run these two lines once:
+--
+--   alter table public.couple_rooms add column if not exists delete_asked_1 timestamptz;
+--   alter table public.couple_rooms add column if not exists delete_asked_2 timestamptz;
 --
 -- Everything else in this file is already idempotent, so a fresh paste of the
 -- whole thing is fine too.

@@ -7,7 +7,7 @@ import { revalidatePath } from 'next/cache';
 import { getSupabase, isSupabaseConfigured } from '@/lib/supabase';
 import { encodeCard } from '@/lib/codec';
 import { siteOrigin } from '@/lib/site';
-import { backoffMs, clientKey, sleep, take } from '@/lib/throttle';
+import { backoffMs, clientKey, sleep, takeLimit } from '@/lib/throttle';
 import { tidyAndTruncate } from '@/lib/truncate';
 import {
   LIMITS, THEME_IDS, STYLE_IDS, STICKER_IDS, MAX_STICKERS, isValidReaction, normaliseUnlockAt, isSealed,
@@ -188,7 +188,7 @@ export async function createCard(input) {
   if (error) return { ok: false, error };
 
   /* Generous, and only about stopping a script — see RATE above. */
-  const gate = take('card:create', await clientKey(), RATE.create.limit, RATE.create.windowMs);
+  const gate = await takeLimit('card:create', await clientKey(), RATE.create.limit, RATE.create.windowMs);
   if (!gate.ok) {
     await sleep(backoffMs(gate.strikes));
     return { ok: false, error: BUSY };
@@ -285,7 +285,7 @@ export async function markOpened(id) {
   const supabase = getSupabase();
   if (!supabase) return { ok: true };
 
-  if (!take('card:touch', await clientKey(), RATE.touch.limit, RATE.touch.windowMs).ok) {
+  if (!(await takeLimit('card:touch', await clientKey(), RATE.touch.limit, RATE.touch.windowMs)).ok) {
     return { ok: true, throttled: true }; // silent: this is telemetry, not an action
   }
 
@@ -317,7 +317,7 @@ export async function setForgiven(id) {
   const supabase = getSupabase();
   if (!supabase) return { ok: true };
 
-  if (!take('card:touch', await clientKey(), RATE.touch.limit, RATE.touch.windowMs).ok) {
+  if (!(await takeLimit('card:touch', await clientKey(), RATE.touch.limit, RATE.touch.windowMs)).ok) {
     return { ok: true, throttled: true };
   }
 
@@ -349,7 +349,7 @@ export async function addReaction(id, emoji) {
   const supabase = getSupabase();
   if (!supabase) return { ok: true, mode: 'demo' };
 
-  const gate = take('card:react', await clientKey(), RATE.react.limit, RATE.react.windowMs);
+  const gate = await takeLimit('card:react', await clientKey(), RATE.react.limit, RATE.react.windowMs);
   if (!gate.ok) {
     await sleep(backoffMs(gate.strikes));
     return { ok: false, error: BUSY };

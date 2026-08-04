@@ -2575,6 +2575,71 @@ html[data-appearance="blush"] .appearance__opt--sky{display:none}
 .nav__corner:hover{background:var(--accent-soft) !important;border-color:var(--accent-line)}
 .nav__drawer .nav__corner{justify-content:flex-start}
 
+/* -- Closing a corner -------------------------------------------------------
+   Deliberately undramatic. The panel is not red, the link at the bottom of the
+   room is not a button, and the only thing wearing the danger colour is the
+   single control that actually starts the process. An interface for ending
+   something should be calm and hard to trip over, not loud. */
+.btn--danger{
+  background:var(--err);color:#fff;border-color:transparent;
+  box-shadow:0 10px 24px rgba(194,43,69,.26);
+}
+.btn--danger:hover{filter:brightness(1.06)}
+
+.corner__close-link{
+  background:none;border:0;padding:0;margin:0;
+  font:inherit;color:var(--plum-soft);font-weight:700;
+  text-decoration:underline;text-underline-offset:2px;cursor:pointer;
+}
+.corner__close-link:hover{color:var(--plum-mid)}
+
+.corner__closing{
+  flex:0 0 auto;width:100%;display:block;text-align:left;cursor:pointer;
+  font:inherit;font-size:.86rem;font-weight:700;line-height:1.45;
+  padding:11px var(--pad);
+  border:0;border-bottom:1px solid var(--line);
+  background:var(--accent-chip);color:var(--accent-deep);
+}
+.corner__closing.is-theirs{
+  background:#FDECEF;color:#8E2338;
+  border-bottom-color:rgba(194,43,69,.2);
+}
+.corner__closing:hover{filter:brightness(.98)}
+
+.closer{position:fixed;inset:0;z-index:320;display:grid;place-items:center;padding:18px}
+.closer__backdrop{
+  position:absolute;inset:0;width:100%;height:100%;
+  border:0;padding:0;cursor:pointer;
+  background:rgba(34,58,84,.42);backdrop-filter:blur(3px);
+}
+.closer__panel{
+  position:relative;width:min(460px,100%);max-height:88dvh;overflow-y:auto;
+  background:#fff;border-radius:var(--r-xl);
+  padding:clamp(22px,4vw,30px);
+  box-shadow:var(--sh-lg);
+  animation:bubbleIn .22s var(--ease) both;
+}
+.closer__title{font-family:var(--font-display);font-size:1.4rem;margin-bottom:12px}
+.closer__body{color:var(--plum-mid);font-size:.95rem;line-height:1.6;margin:0 0 12px}
+.closer__flag{
+  margin:14px 0;padding:11px 13px;border-radius:var(--r-sm);
+  font-size:.9rem;line-height:1.5;font-weight:700;
+  background:var(--accent-chip);color:var(--accent-deep);
+}
+.closer__flag--theirs{background:#FDECEF;color:#8E2338}
+.closer__actions{display:grid;gap:9px;margin-top:18px}
+.closer__note{
+  margin:12px 0 0;min-height:1.2em;
+  font-size:.86rem;font-weight:700;color:var(--plum-soft);text-align:center;
+}
+
+.corner-door-note{
+  max-width:560px;margin:0 auto 18px;padding:13px 16px;
+  border-radius:var(--r-sm);font-size:.92rem;line-height:1.55;font-weight:600;
+  background:var(--accent-chip);color:var(--accent-deep);
+  border:1px solid var(--accent-chip-line);
+}
+
 .corner-promo{
   display:grid;gap:22px;align-items:center;
   border-radius:var(--r-xl);
@@ -2640,6 +2705,7 @@ html[data-appearance="blush"] .appearance__opt--sky{display:none}
   .corner-demo .bubble.is-out{opacity:1;transform:none}
   .corner-demo .bubble.is-in{transition:none}
   .corner-demo__typing span{animation:none}
+  .closer__panel{animation:none}
   .door,.door__go span{transition:none}
   .door:hover{transform:none}
 }

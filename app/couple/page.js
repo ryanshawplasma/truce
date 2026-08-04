@@ -3,7 +3,7 @@ import { redirect } from 'next/navigation';
 import BrandMark from '@/app/components/BrandMark';
 import BetaChip from '@/app/components/BetaChip';
 import CoupleForms from './CoupleForms';
-import { getSession } from './actions';
+import { getSession } from '@/lib/couple-session';
 import { isSupabaseConfigured } from '@/lib/supabase';
 
 /**
@@ -34,6 +34,9 @@ export default async function CouplePage({ searchParams }) {
   const configured = isSupabaseConfigured();
   const params = (await searchParams) || {};
   const doorError = DOOR_ERRORS[params.err] || '';
+  /* Both of you agreed to close it, and it is gone. Not an error — but landing
+     on a blank sign-in form with no explanation would feel like one. */
+  const justClosed = params.closed === '1';
 
   /* Already signed in? Go straight in. */
   if (configured) {
@@ -73,6 +76,13 @@ export default async function CouplePage({ searchParams }) {
             For the moments one of you is blocked everywhere else and still has something to say. 💙
           </p>
         </div>
+
+        {justClosed ? (
+          <p className="corner-door-note" role="status">
+            That corner is closed. Every message and photo in it has been deleted, for both of you.
+            You can always start a new one 🤍
+          </p>
+        ) : null}
 
         {doorError ? (
           <p className="corner-door-error" role="alert">

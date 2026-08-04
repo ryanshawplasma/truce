@@ -1,9 +1,9 @@
 'use server';
 
-import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
 import { isSupabaseConfigured } from '@/lib/supabase';
-import { backoffMs, clientKey, sleep, strike, take } from '@/lib/throttle';
+import { currentSession, endSession, startSession } from '@/lib/couple-session';
+import { backoffMs, clientKey, sleep, strikeLimit, takeLimit } from '@/lib/throttle';
 import { tidyAndTruncate } from '@/lib/truncate';
 import {
   MEDIA_CAPTION_MAX,
@@ -13,13 +13,13 @@ import {
   isPlausibleMediaPath,
 } from '@/lib/media';
 import {
-  COUPLE_COOKIE,
+  DELETE_WINDOW_MS,
   MAX_MESSAGE_LENGTH,
   attachMediaUrls,
   createMediaUploadTicket,
-  createSessionToken,
-  findRoomById,
+  destroyRoom,
   findRoomByName,
+  findRoomForClosing,
   insertMessage,
   insertRoom,
   listMessages,
@@ -28,8 +28,8 @@ import {
   normalisePassword,
   normaliseRoomName,
   normaliseSide,
-  readSessionToken,
-  sessionCookieOptions,
+  readDeleteState,
+  setDeleteAsk,
   verifyPassword,
 } from '@/lib/couple';
 
@@ -82,46 +82,11 @@ async function uniformFail(startedAt, strikes) {
 
 /* ------------------------------------------------------------------ session */
 
-async function currentSession() {
-  const jar = await cookies();
-  const raw = jar.get(COUPLE_COOKIE);
-  if (!raw || !raw.value) return null;
-  return readSessionToken(raw.value);
-}
-
-/**
- * The room this browser is signed into.
- *
- * Returns { session } when signed in, { session: null } when not, and
- * { session: null, failed: true } when the LOOKUP broke rather than the room
- * being absent.
- *
- * That third case is the one that caused a production mystery: a failed read
- * used to be indistinguishable from "no such room", so /couple/room bounced
- * straight back to /couple and a corner that had just been created looked like
- * it had never been made. A read failure must never be mistaken for a fact.
- */
-export async function getSessionState() {
-  const session = await currentSession();
-  if (!session) return { session: null };
-
-  const found = await findRoomById(session.roomId);
-  if (found.failed) return { session: null, failed: true, category: found.category };
-  if (!found.room) return { session: null }; // deleted room, or an old signing secret
-
-  return { session: { room: found.room, side: session.side } };
-}
-
-/** Convenience wrapper for callers that only care whether we are signed in. */
-export async function getSession() {
-  const { session } = await getSessionState();
-  return session;
-}
-
-async function startSession(roomId, side) {
-  const jar = await cookies();
-  jar.set(COUPLE_COOKIE, createSessionToken(roomId, side), sessionCookieOptions());
-}
+/* currentSession / getSessionState / startSession now live in
+   lib/couple-session.js. They are plumbing for server components, and every
+   export of this file is a public endpoint — see the note at the top of that
+   module. Only the two that genuinely need to be callable from a browser stay
+   here: leaveRoom (a button) and enterRoom (via createRoom / joinRoom). */
 
 /**
  * Sign in and go straight to the room.
@@ -144,8 +109,7 @@ async function enterRoom(roomId, side) {
 }
 
 export async function leaveRoom() {
-  const jar = await cookies();
-  jar.set(COUPLE_COOKIE, '', { ...sessionCookieOptions(), maxAge: 0 });
+  await endSession();
   return { ok: true };
 }
 
@@ -156,7 +120,7 @@ export async function createRoom(input) {
 
   /* Checked before anything expensive: creating a room hashes a password. */
   const ip = await clientKey();
-  const gate = take('couple:create', ip, CREATE_PER_IP, WINDOW_MS);
+  const gate = await takeLimit('couple:create', ip, CREATE_PER_IP, WINDOW_MS);
   if (!gate.ok) {
     await sleep(backoffMs(gate.strikes));
     return { ok: false, error: TOO_MANY, field: 'name' };
@@ -225,8 +189,8 @@ export async function joinRoom(input) {
   const roomKey = `${ip}|${nameCheck.name || '?'}`;
 
   /* Both gates are consulted BEFORE the password is hashed. */
-  const perIp = take('couple:join:ip', ip, JOIN_PER_IP, WINDOW_MS);
-  const perRoom = take('couple:join:room', roomKey, JOIN_PER_ROOM, WINDOW_MS);
+  const perIp = await takeLimit('couple:join:ip', ip, JOIN_PER_IP, WINDOW_MS);
+  const perRoom = await takeLimit('couple:join:room', roomKey, JOIN_PER_ROOM, WINDOW_MS);
   if (!perIp.ok || !perRoom.ok) {
     await sleep(backoffMs(Math.max(perIp.strikes, perRoom.strikes)));
     return { ok: false, error: TOO_MANY };
@@ -234,7 +198,7 @@ export async function joinRoom(input) {
 
   /* One helper for every failure path, so they are indistinguishable. */
   const fail = async () => {
-    const strikes = strike('couple:join:room', roomKey);
+    const strikes = await strikeLimit('couple:join:room', roomKey);
     await uniformFail(startedAt, strikes);
     return wrong;
   };
@@ -362,7 +326,7 @@ export async function getUploadUrl() {
   const session = await currentSession();
   if (!session) return { ok: false, signedOut: true, error: 'You are signed out — open your corner again.' };
 
-  const gate = take('corner:upload', `${session.roomId}:${session.side}`, MEDIA_UPLOADS_PER_HOUR, 60 * 60 * 1000);
+  const gate = await takeLimit('corner:upload', `${session.roomId}:${session.side}`, MEDIA_UPLOADS_PER_HOUR, 60 * 60 * 1000);
   if (!gate.ok) return { ok: false, throttled: true, error: MEDIA_THROTTLE_MESSAGE };
 
   const ticket = await createMediaUploadTicket(session.roomId);
@@ -435,4 +399,125 @@ export async function refreshMedia(ids) {
 
   const matched = (photos || []).filter((row) => wanted.has(Number(row.id)));
   return { ok: true, messages: await attachMediaUrls(matched) };
+}
+
+/* ------------------------------------------------------------------ closing */
+
+/**
+ * Closing a corner takes two people, a password each, and ten minutes.
+ *
+ * The rules, in one place:
+ *
+ *   - each side asks separately, and each ask costs the room password;
+ *   - the room dies only when both asks are live at once, inside the window;
+ *   - either side can withdraw, and doing nothing is a veto — the window
+ *     closes by itself;
+ *   - the password is re-checked every time rather than trusted from the
+ *     session, because the session is thirty days old by design. Somebody
+ *     holding an unlocked phone is not somebody who knows the password.
+ *
+ * See the long note above DELETE_WINDOW_MS in lib/couple.js.
+ */
+
+const CLOSE_PER_ROOM = 6; // password attempts / minute, per side of a room
+const CLOSE_WINDOW_MS = 60 * 1000;
+const CLOSE_SETUP =
+  'Closing a corner is not switched on for this site yet — it needs one quick setup step by ' +
+  'whoever runs it 🤍';
+
+/** The shape the room renders from. Never includes anything secret. */
+function closingPayload(row, side, now = Date.now()) {
+  const state = readDeleteState(row, now);
+  const me = Number(side) === 2 ? 2 : 1;
+  const them = me === 1 ? 2 : 1;
+  return {
+    ok: true,
+    mine: state.asked[me],
+    theirs: state.asked[them],
+    msLeft: state.msLeft,
+    windowMs: DELETE_WINDOW_MS,
+  };
+}
+
+/** Where the room stands on closing right now. Cheap, and reveals nothing. */
+export async function getClosingState() {
+  if (!isSupabaseConfigured()) return { ok: false, error: NO_DB };
+
+  const session = await currentSession();
+  if (!session) return { ok: false, signedOut: true, error: 'You are signed out — open your corner again.' };
+
+  const found = await findRoomForClosing(session.roomId);
+  if (found.failed) {
+    if (found.category === 'schema') return { ok: false, setup: true, error: CLOSE_SETUP };
+    return { ok: false, error: 'We could not reach the database just now.' };
+  }
+  if (!found.room) return { ok: false, gone: true, error: 'This corner is no longer here.' };
+
+  return closingPayload(found.room, session.side);
+}
+
+/**
+ * Ask to close the corner, or withdraw an ask.
+ *
+ * `withdraw` needs no password: taking your own hand off the button is always
+ * allowed, and making somebody type a password to STOP a deletion would be a
+ * strange place to put friction.
+ */
+export async function askToClose(password, withdraw = false) {
+  if (!isSupabaseConfigured()) return { ok: false, error: NO_DB };
+
+  const session = await currentSession();
+  if (!session) return { ok: false, signedOut: true, error: 'You are signed out — open your corner again.' };
+
+  /* Verifying a password runs scrypt, so the gate comes first — same reasoning
+     as joinRoom. Withdrawing is free and does not spend a token. */
+  if (!withdraw) {
+    const gate = await takeLimit('couple:close', `${session.roomId}:${session.side}`, CLOSE_PER_ROOM, CLOSE_WINDOW_MS);
+    if (!gate.ok) {
+      await sleep(backoffMs(gate.strikes));
+      return { ok: false, error: TOO_MANY };
+    }
+  }
+
+  const found = await findRoomForClosing(session.roomId);
+  if (found.failed) {
+    if (found.category === 'schema') return { ok: false, setup: true, error: CLOSE_SETUP };
+    return { ok: false, error: 'We could not reach the database just now. Please try again.' };
+  }
+  if (!found.room) return { ok: false, gone: true, error: 'This corner is no longer here.' };
+
+  if (withdraw) {
+    const cleared = await setDeleteAsk(session.roomId, session.side, null);
+    if (cleared.error) return { ok: false, error: 'Could not change that just now.' };
+    return { ...closingPayload(cleared.row, session.side), withdrawn: true };
+  }
+
+  const startedAt = Date.now();
+  const good = await verifyPassword(String(password || ''), found.room.pass_hash, found.room.pass_salt);
+  if (!good) {
+    /* Same uniform delay as a failed join: a wrong password here should not be
+       distinguishable from any other refusal by a stopwatch. */
+    await uniformFail(startedAt, await strikeLimit('couple:close', `${session.roomId}:${session.side}`));
+    return { ok: false, error: 'That password did not match.' };
+  }
+
+  const saved = await setDeleteAsk(session.roomId, session.side, new Date());
+  if (saved.error) {
+    if (saved.error === 'schema') return { ok: false, setup: true, error: CLOSE_SETUP };
+    return { ok: false, error: 'Could not record that just now. Please try again.' };
+  }
+
+  const state = readDeleteState(saved.row);
+
+  /* Both hands on the button, inside the window. */
+  if (state.both) {
+    const destroyed = await destroyRoom(session.roomId);
+    if (destroyed.error) {
+      return { ok: false, error: 'Could not close the corner just now. Please try again.' };
+    }
+    await endSession();
+    return { ok: true, closed: true };
+  }
+
+  return { ...closingPayload(saved.row, session.side), waiting: true };
 }

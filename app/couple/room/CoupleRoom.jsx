@@ -3,7 +3,16 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { getGallery, getMessages, getUploadUrl, leaveRoom, refreshMedia, sendMessage } from '../actions';
+import {
+  getClosingState,
+  getGallery,
+  getMessages,
+  getUploadUrl,
+  leaveRoom,
+  refreshMedia,
+  sendMessage,
+} from '../actions';
+import CloseCorner from './CloseCorner';
 import { daysBetween } from '@/lib/format';
 import { COUPLE_MESSAGE_MAX as MAX_MESSAGE_LENGTH } from '@/lib/constants';
 import {
@@ -42,6 +51,12 @@ import BetaChip from '@/app/components/BetaChip';
 
 const POLL_MS = 4000;
 
+/* Closing state changes far less often than messages do, and only ever because
+   a person deliberately did something. Riding along with every fourth message
+   poll keeps the other side informed within about sixteen seconds without
+   doubling the number of database reads a quiet room makes. */
+const CLOSING_EVERY = 4;
+
 export default function CoupleRoom({ room, side, initialMessages = [] }) {
   const router = useRouter();
   const [messages, setMessages] = useState(initialMessages);
@@ -61,12 +76,17 @@ export default function CoupleRoom({ room, side, initialMessages = [] }) {
   const [gallery, setGallery] = useState({ state: 'idle', photos: [], setup: false });
   const [viewer, setViewer] = useState(null); // { src, caption }
 
+  /* Closing the corner */
+  const [closing, setClosing] = useState(null); // null until the first poll answers
+  const [closerOpen, setCloserOpen] = useState(false);
+
   const listRef = useRef(null);
   const inputRef = useRef(null);
   const sendBtnRef = useRef(null);
   const pickRef = useRef(null);
   const pickBtnRef = useRef(null);
   const sendingRef = useRef(false);
+  const pollCountRef = useRef(0);
   const uploadingRef = useRef(false);
   /* Object URLs we made for instant previews; released together on unmount. */
   const previewUrlsRef = useRef([]);
@@ -145,6 +165,25 @@ export default function CoupleRoom({ room, side, initialMessages = [] }) {
             (max, m) => (m.id > max ? m.id : max),
             highestIdRef.current,
           );
+        }
+
+        /* Every fourth pass, and always on the very first one, ask where the
+           corner stands on closing — otherwise the other person's request
+           would only surface if they happened to open the panel. */
+        pollCountRef.current += 1;
+        if (pollCountRef.current === 1 || pollCountRef.current % CLOSING_EVERY === 0) {
+          const state = await withTimeout(getClosingState(), 8000, null);
+          if (!alive || !state) return;
+          if (state.gone) {
+            /* The other side finished closing it while this tab was open. */
+            router.push('/couple?closed=1');
+            return;
+          }
+          if (state.signedOut) {
+            router.push('/couple');
+            return;
+          }
+          setClosing(state);
         }
       } catch {
         /* A failed poll is not worth telling anyone about — try again in 4s. */
@@ -422,6 +461,18 @@ export default function CoupleRoom({ room, side, initialMessages = [] }) {
         </div>
       </header>
 
+      {closing && (closing.theirs || closing.mine) ? (
+        <button
+          type="button"
+          className={`corner__closing${closing.theirs ? ' is-theirs' : ''}`}
+          onClick={() => setCloserOpen(true)}
+        >
+          {closing.theirs
+            ? 'They have asked to close this corner — tap to read what that means'
+            : 'You have asked to close this corner — tap to change your mind'}
+        </button>
+      ) : null}
+
       {view === 'gallery' ? (
         <Gallery gallery={gallery} onOpen={openViewer} onBroken={resign} />
       ) : (
@@ -523,10 +574,22 @@ export default function CoupleRoom({ room, side, initialMessages = [] }) {
 
       <p className="corner__foot">
         <Link href="/">Truce 🤍</Link> · signed in on this device for 30 days · not end-to-end
-        encrypted
+        encrypted ·{' '}
+        <button type="button" className="corner__close-link" onClick={() => setCloserOpen(true)}>
+          close this corner
+        </button>
       </p>
 
       {viewer ? <Viewer src={viewer.src} caption={viewer.caption} onClose={() => setViewer(null)} /> : null}
+
+      {closerOpen ? (
+        <CloseCorner
+          state={closing}
+          onState={setClosing}
+          onClosed={() => router.push('/couple?closed=1')}
+          onDismiss={() => setCloserOpen(false)}
+        />
+      ) : null}
     </div>
   );
 }
