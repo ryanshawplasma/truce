@@ -2,6 +2,7 @@
 
 import BrandMark from './BrandMark';
 import AppearanceToggle from './AppearanceToggle';
+import InstallPrompt from './InstallPrompt';
 import { toast } from './ui';
 import { useMaker } from './MakerProvider';
 
@@ -107,6 +108,13 @@ export default function Footer() {
               </li>
               <li>
                 <AppearanceToggle variant="link" />
+              </li>
+              {/* Renders nothing unless this browser can actually install, and
+                  nothing at all once Truce is already on the home screen. The
+                  hero's "no app to install" still holds — nobody needs this to
+                  open a card, it is just here for the people who live in it. */}
+              <li>
+                <InstallPrompt className="footer__install" label="Add to Home Screen" />
               </li>
             </ul>
           </div>

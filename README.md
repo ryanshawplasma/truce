@@ -31,8 +31,8 @@ Free while in beta — no accounts, no payments, no card details.
 - **96 hand-written messages** in four styles (sweet, funny, poetic, from the
   heart) — 56 apologies, 24 birthday, 16 proposal — filtered by occasion and by
   who you're writing to. Every word stays editable.
-- **Two site appearances** — **Sky 💙** (the default) and **Blush 🌸** (the
-  original warm cream). The switch is in the nav, the mobile menu and the
+- **Two site appearances** — **Blush 🌸** (the default warm cream) and
+  **Sky 💙** (the cool one). The switch is in the nav, the mobile menu and the
   footer, it is remembered by the visitor's browser, and it is applied before
   the page paints so there is never a flash of the wrong colours.
 - **Six card themes** — Blush Rose, Sky Blue, Peach Sunset, Lavender Haze,
@@ -323,7 +323,7 @@ A few deliberate choices:
 
 ### Appearance: the site skin
 
-`html[data-appearance="sky"]` (or `"blush"`) is the switch everything hangs off.
+`html[data-appearance="blush"]` (or `"sky"`) is the switch everything hangs off.
 `app/globals.css` defines one block of semantic tokens per appearance — `--page`,
 `--ink`, `--accent`, `--footer-bg` and friends — and the rest of the stylesheet
 only ever refers to those names, so adding a third skin means copying one block
@@ -331,7 +331,7 @@ and changing about thirty values. Every text colour is chosen against the
 background it actually sits on and clears WCAG AA (4.5:1) in both appearances.
 
 Two things deliberately stay rose in every appearance: the logo and the primary
-buttons. That pop of Truce rose is the brand, and it looks its best on sky.
+buttons. That pop of Truce rose is the brand, and blush is where it feels at home.
 
 The choice lives in `localStorage` under `truce.appearance`. As with "My cards",
 every read and write is wrapped — if storage is blocked the site simply stays on

@@ -23,7 +23,7 @@
      Appearance   the whole site's palette — nav, landing, maker, /mine,
                   /couple, /s, /dev, 404. One setting per visitor, remembered
                   in their browser, applied as data-appearance on <html>.
-                  Ships as "sky" (the default) and "blush" (the original look).
+                  Ships as "blush" (the default) and "sky" (the cool one).
 
      Theme        the palette of a single card, picked by the sender in the
                   maker and carried inside the card itself. Those are the --t-*
@@ -35,8 +35,8 @@
    tokens below. Adding a third appearance is a matter of copying one block.
 
    data-appearance is written by a tiny inline script in app/layout.js that runs
-   before the first paint, so a blush visitor never sees a flash of sky. With no
-   JavaScript at all the :root defaults apply and the site is simply sky.
+   before the first paint, so a sky visitor never sees a flash of blush. With no
+   JavaScript at all the :root defaults apply and the site is simply blush.
    ========================================================================== */
 
 :root{
@@ -75,11 +75,10 @@
   --ease-out-back:cubic-bezier(.34,1.42,.64,1);
 }
 
-/* -- Appearance: Sky 💙 — the default -------------------------------------
+/* -- Appearance: Sky 💙 — the opt-in cool skin ----------------------------
    Cool paper, warm-white cards, deep navy-plum ink. Contrast ratios in the
    comments are measured against the background each token actually sits on;
    every one of them clears WCAG AA (4.5:1). */
-:root,
 html[data-appearance="sky"]{
   --page:#EAF4FE;
   --page-deep:#DDEBFC;
@@ -158,7 +157,11 @@ html[data-appearance="sky"]{
   --toast-ink:#EAF3FB;
 }
 
-/* -- Appearance: Blush 🌸 — the original look ----------------------------- */
+/* -- Appearance: Blush 🌸 — the default -----------------------------------
+   Also carries the bare :root fallback, so a visitor with no JavaScript at
+   all (and therefore no data-appearance attribute) still lands on the
+   default skin rather than the other one. */
+:root,
 html[data-appearance="blush"]{
   --page:#FFF7F2;
   --page-deep:#FDEDE4;
@@ -2428,10 +2431,14 @@ html[data-appearance="blush"] .appearance__opt--sky{display:none}
    some browsers. */
 .corner__list::before{content:"";margin-top:auto}
 .corner__loading{margin:auto;color:var(--plum-soft);font-weight:700;font-size:.92rem}
+/* Sticky so the day you are reading stays named at the top of the pane while
+   you scroll through it — the one bit of chrome every chat app agrees on. */
 .corner__date{
+  position:sticky;top:2px;z-index:4;
   align-self:center;margin:10px 0 4px;
   font-size:.72rem;font-weight:800;letter-spacing:.1em;text-transform:uppercase;
-  color:var(--plum-soft);background:rgba(255,255,255,.75);
+  color:var(--plum-soft);background:rgba(255,255,255,.86);
+  backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);
   border:1px solid var(--line);padding:5px 13px;border-radius:var(--r-pill);
 }
 .corner__empty{
@@ -2441,31 +2448,49 @@ html[data-appearance="blush"] .appearance__opt--sky{display:none}
 .corner__empty h2{font-size:1.3rem;margin-bottom:6px}
 .corner__empty p{color:var(--plum-mid);font-size:.94rem;margin:0}
 
+/* Bubbles are square-shouldered by default and only grow a tail on the LAST of
+   a run, so three quick messages read as one paragraph from one person rather
+   than three separate announcements. */
 .bubble{
   align-self:flex-start;max-width:min(78%,440px);
   background:#fff;border:1px solid var(--line);
-  border-radius:18px 18px 18px 6px;
+  border-radius:18px;
   padding:10px 14px 7px;
   box-shadow:var(--sh-xs);
   animation:bubbleIn .28s var(--ease) both;
 }
+.bubble.is-last{border-bottom-left-radius:6px}
 .bubble--mine{
   align-self:flex-end;
   background:var(--cta-grad);
   border-color:transparent;color:#fff;
-  border-radius:18px 18px 6px 18px;
   box-shadow:var(--sh-bubble);
 }
+.bubble--mine.is-last{border-bottom-left-radius:18px;border-bottom-right-radius:6px}
+/* Inside a run, pull the gap in from the list's 8px to a snug 4px. */
+.bubble:not(.is-first){margin-top:-4px}
 .bubble.is-pending{opacity:.6}
 .bubble__body{
   margin:0;font-size:.98rem;line-height:1.5;
   white-space:pre-wrap;overflow-wrap:anywhere;
 }
+.bubble__link{
+  color:inherit;text-decoration:underline;
+  text-underline-offset:2px;text-decoration-thickness:1.5px;
+  font-weight:700;
+}
+.bubble--mine .bubble__link{text-decoration-color:rgba(255,255,255,.6)}
+.bubble__meta{
+  display:flex;align-items:center;justify-content:flex-end;gap:4px;
+  margin-top:3px;
+}
 .bubble__time{
-  display:block;margin-top:3px;text-align:right;
   font-size:.66rem;font-weight:700;color:var(--plum-soft);
 }
 .bubble--mine .bubble__time{color:rgba(255,255,255,.8)}
+.tick{color:rgba(255,255,255,.85);flex:0 0 auto}
+/* The clock spins nothing — it just sits there looking patient. */
+.tick--wait{opacity:.75}
 @keyframes bubbleIn{from{opacity:0;transform:translateY(8px) scale(.98)}to{opacity:1;transform:none}}
 
 .corner__compose{
@@ -2497,6 +2522,93 @@ html[data-appearance="blush"] .appearance__opt--sky{display:none}
   text-align:center;font-size:.72rem;color:var(--plum-soft);
 }
 .corner__foot a{font-weight:800;color:var(--plum-mid)}
+
+/* ---- Jump to latest ------------------------------------------------------
+   A flex item between the list and the composer, lifted back over the list by
+   a negative margin. Doing it this way rather than absolute positioning means
+   it never has to know how tall the composer has grown to. */
+.corner__jump{
+  position:relative;z-index:6;
+  align-self:flex-end;
+  margin:-54px var(--pad) 8px 0;
+  display:flex;align-items:center;gap:6px;
+  height:38px;padding:0 6px 0 8px;min-width:38px;
+  border:1px solid var(--line);border-radius:var(--r-pill);
+  background:rgba(255,255,255,.94);
+  backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);
+  box-shadow:var(--sh-sm);
+  color:var(--plum-mid);font-weight:800;font-size:.8rem;
+  animation:jumpIn .22s var(--ease) both;
+}
+.corner__jump:hover{color:var(--plum)}
+.corner__jump-arrow{font-size:1.05rem;line-height:1}
+.corner__jump.has-unread{
+  background:var(--cta-grad);border-color:transparent;color:#fff;
+  box-shadow:var(--sh-bubble);
+}
+.corner__jump-count{
+  display:grid;place-items:center;min-width:20px;height:20px;padding:0 6px;
+  border-radius:var(--r-pill);background:rgba(255,255,255,.24);
+  font-size:.72rem;font-weight:900;
+}
+@keyframes jumpIn{from{opacity:0;transform:translateY(6px) scale(.94)}to{opacity:1;transform:none}}
+
+/* ---- Add to home screen --------------------------------------------------
+   The trigger renders only when the browser can actually install, so these
+   rules are dormant most of the time. */
+.install-btn{
+  display:inline-flex;align-items:center;justify-content:center;gap:8px;
+  border:1px solid var(--line);border-radius:var(--r-pill);
+  background:rgba(255,255,255,.9);color:var(--plum-mid);
+  font-weight:800;cursor:pointer;
+  transition:border-color .2s var(--ease),color .2s var(--ease),transform .12s var(--ease);
+}
+.install-btn:hover{border-color:var(--accent);color:var(--plum)}
+.install-btn:active{transform:scale(.98)}
+.install-btn--chip{padding:7px 14px;font-size:.82rem}
+.install-btn--wide{width:100%;padding:11px 16px;font-size:.88rem}
+.corner__install{
+  flex:0 0 auto;
+  margin:0 var(--pad) 8px;width:auto;
+  background:rgba(255,255,255,.82);
+  border-style:dashed;
+}
+
+/* In the footer it should read as one of the links, not as a button parked in
+   the middle of a list. */
+.footer__install{
+  padding:0;border:0;background:none;gap:6px;
+  font-size:inherit;font-weight:inherit;color:inherit;
+}
+.footer__install:hover{border:0;color:#fff}
+
+.install-guide{max-width:420px}
+.install-steps{list-style:none;margin:4px 0 0;padding:0;display:grid;gap:14px}
+.install-step{display:flex;gap:12px;align-items:flex-start;text-align:left}
+.install-step__n{
+  flex:0 0 28px;display:grid;place-items:center;
+  width:28px;height:28px;border-radius:50%;
+  background:var(--cta-grad);color:#fff;
+  font-weight:900;font-size:.86rem;
+  box-shadow:var(--sh-xs);
+}
+.install-step__text{
+  display:block;font-size:.95rem;line-height:1.5;color:var(--plum);
+}
+.install-step__text b{font-weight:900}
+.install-step__text small{
+  display:block;margin-top:2px;font-size:.8rem;font-weight:600;color:var(--plum-soft);
+}
+.install-step__glyph{
+  display:inline-grid;place-items:center;vertical-align:-4px;margin-left:6px;
+  width:26px;height:26px;border-radius:8px;
+  background:#EAF3FB;color:#2C6FB5;
+}
+.install-guide__note{
+  margin:16px 0 0;padding:9px 12px;border-radius:12px;
+  background:var(--sel-bg);
+  font-size:.8rem;font-weight:700;color:var(--plum-mid);
+}
 
 /* ---- The landing-page section ------------------------------------------- */
 /* -- The two doors ----------------------------------------------------------
@@ -3331,7 +3443,10 @@ html[data-appearance="blush"] .appearance__opt--sky{display:none}
 .bubble--photo .bubble__body{
   padding:6px 8px 0;font-size:.93rem;
 }
-.bubble--photo .bubble__time{padding:0 8px 2px}
+/* The photo runs to the bubble's edge, so the time and tick need their own
+   inset back off it. Applied to the row, not the time, or the tick would sit
+   outside the padding. */
+.bubble--photo .bubble__meta{padding:0 8px 2px}
 
 .photo{
   display:block;position:relative;width:100%;padding:0;border:0;

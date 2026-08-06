@@ -14,6 +14,7 @@ import {
 } from '../actions';
 import CloseCorner from './CloseCorner';
 import { daysBetween } from '@/lib/format';
+import { buildRows, clockTime, splitLinks } from '@/lib/chat';
 import { COUPLE_MESSAGE_MAX as MAX_MESSAGE_LENGTH } from '@/lib/constants';
 import {
   MEDIA_ACCEPT,
@@ -28,6 +29,7 @@ import {
 } from '@/lib/media';
 import { burstFrom, withTimeout } from '@/app/components/ui';
 import BetaChip from '@/app/components/BetaChip';
+import InstallPrompt from '@/app/components/InstallPrompt';
 
 /**
  * The room.
@@ -80,6 +82,11 @@ export default function CoupleRoom({ room, side, initialMessages = [] }) {
   const [closing, setClosing] = useState(null); // null until the first poll answers
   const [closerOpen, setCloserOpen] = useState(false);
 
+  /* The "jump to latest" button, and how much has landed since they scrolled
+     up. Zero unread still shows the button — sometimes you just want back. */
+  const [awayFromBottom, setAwayFromBottom] = useState(false);
+  const [unread, setUnread] = useState(0);
+
   const listRef = useRef(null);
   const inputRef = useRef(null);
   const sendBtnRef = useRef(null);
@@ -88,6 +95,11 @@ export default function CoupleRoom({ room, side, initialMessages = [] }) {
   const sendingRef = useRef(false);
   const pollCountRef = useRef(0);
   const uploadingRef = useRef(false);
+  /* Whether the list is parked at the bottom. Kept in a ref as well as state
+     because the "did anything arrive?" effect below reads it from inside a
+     closure that must not go stale. */
+  const atBottomRef = useRef(true);
+  const prevCountRef = useRef(initialMessages.length);
   /* Object URLs we made for instant previews; released together on unmount. */
   const previewUrlsRef = useRef([]);
   /* Ids we have already asked the server to re-sign, so a genuinely dead photo
@@ -199,10 +211,71 @@ export default function CoupleRoom({ room, side, initialMessages = [] }) {
     };
   }, [router]);
 
-  /* New messages arriving should bring the view with them. */
+  /**
+   * New messages arriving should bring the view with them — but only if the
+   * view was already down there.
+   *
+   * Scrolling somebody back to the bottom while they are reading last Tuesday
+   * is the single rudest thing a chat can do. If they are up in the history,
+   * the arrival is counted instead and offered as a button.
+   *
+   * Your own message always wins: pressing send means you want to see it.
+   */
   useEffect(() => {
-    if (view === 'chat') stickToBottom(true);
-  }, [messages.length, view, stickToBottom]);
+    if (view !== 'chat') return;
+
+    const grew = messages.length > prevCountRef.current;
+    prevCountRef.current = messages.length;
+    if (!grew) return;
+
+    const last = messages[messages.length - 1];
+    const mineJustLanded = last && last.author === side;
+
+    if (atBottomRef.current || mineJustLanded) {
+      stickToBottom(true);
+      setUnread(0);
+    } else {
+      setUnread((n) => n + 1);
+    }
+  }, [messages, view, side, stickToBottom]);
+
+  /* One cheap read per scroll frame: are we at the bottom or not? */
+  const onListScroll = useCallback(() => {
+    const el = listRef.current;
+    if (!el) return;
+    const distance = el.scrollHeight - el.scrollTop - el.clientHeight;
+    const bottom = distance < 90;
+    atBottomRef.current = bottom;
+    setAwayFromBottom(!bottom);
+    if (bottom) setUnread(0);
+  }, []);
+
+  const jumpToLatest = useCallback(() => {
+    atBottomRef.current = true;
+    setAwayFromBottom(false);
+    setUnread(0);
+    stickToBottom(true);
+  }, [stickToBottom]);
+
+  /**
+   * The composer grows with what is being written, up to the max-height in
+   * globals.css, and then scrolls inside itself.
+   *
+   * Height goes back to `auto` before every measurement, otherwise scrollHeight
+   * is reported against the box's current height and the field can only ever
+   * get taller — delete a paragraph and you would be left staring at the hole
+   * it used to fill.
+   */
+  const autoGrow = useCallback(() => {
+    const el = inputRef.current;
+    if (!el) return;
+    el.style.height = 'auto';
+    el.style.height = `${el.scrollHeight}px`;
+  }, []);
+
+  useEffect(() => {
+    autoGrow();
+  }, [draft, autoGrow]);
 
   /* ----------------------------------------------------------------- sending */
   const submit = async (e) => {
@@ -429,7 +502,7 @@ export default function CoupleRoom({ room, side, initialMessages = [] }) {
     router.push('/couple');
   };
 
-  const rows = useMemo(() => withDateSeparators(messages), [messages]);
+  const rows = useMemo(() => buildRows(messages), [messages]);
 
   return (
     <div className="corner">
@@ -476,7 +549,7 @@ export default function CoupleRoom({ room, side, initialMessages = [] }) {
       {view === 'gallery' ? (
         <Gallery gallery={gallery} onOpen={openViewer} onBroken={resign} />
       ) : (
-        <div className="corner__list" ref={listRef}>
+        <div className="corner__list" ref={listRef} onScroll={onListScroll}>
           {!mounted ? (
             <p className="corner__loading">Opening your corner…</p>
           ) : rows.length === 0 ? (
@@ -499,6 +572,8 @@ export default function CoupleRoom({ room, side, initialMessages = [] }) {
                   key={row.message.id}
                   message={row.message}
                   mine={row.message.author === side}
+                  firstOfGroup={row.firstOfGroup}
+                  lastOfGroup={row.lastOfGroup}
                   onOpen={openViewer}
                   onBroken={resign}
                   onShown={onPhotoShown}
@@ -508,6 +583,31 @@ export default function CoupleRoom({ room, side, initialMessages = [] }) {
           )}
         </div>
       )}
+
+      {/* Order matters: the jump button lifts itself back over the LIST with a
+          negative margin, so it has to sit directly after it. Put the install
+          banner above and the button would float over the banner instead. */}
+      {view === 'chat' && awayFromBottom ? (
+        <button
+          type="button"
+          className={`corner__jump${unread ? ' has-unread' : ''}`}
+          onClick={jumpToLatest}
+          aria-label={unread ? `Jump to latest — ${unread} new` : 'Jump to latest'}
+        >
+          <span className="corner__jump-arrow" aria-hidden="true">
+            ↓
+          </span>
+          {unread ? (
+            <span className="corner__jump-count" aria-hidden="true">
+              {unread > 99 ? '99+' : unread}
+            </span>
+          ) : null}
+        </button>
+      ) : null}
+
+      {/* Renders nothing unless this browser can actually install, and nothing
+          at all once Truce is running from the home screen. */}
+      <InstallPrompt className="corner__install" tone="wide" label="Add Truce to your home screen" />
 
       <form className="corner__compose" onSubmit={submit}>
         <input
@@ -596,18 +696,59 @@ export default function CoupleRoom({ room, side, initialMessages = [] }) {
 
 /* ------------------------------------------------------------------ bubbles */
 
-function Bubble({ message, mine, onOpen, onBroken, onShown }) {
+function Bubble({ message, mine, firstOfGroup, lastOfGroup, onOpen, onBroken, onShown }) {
   const isPhoto = Boolean(message.media_path);
+  const className = [
+    'bubble',
+    mine ? 'bubble--mine' : '',
+    message.pending ? 'is-pending' : '',
+    isPhoto ? 'bubble--photo' : '',
+    firstOfGroup ? 'is-first' : '',
+    lastOfGroup ? 'is-last' : '',
+  ]
+    .filter(Boolean)
+    .join(' ');
+
   return (
-    <div
-      className={`bubble${mine ? ' bubble--mine' : ''}${message.pending ? ' is-pending' : ''}${
-        isPhoto ? ' bubble--photo' : ''
-      }`}
-    >
+    <div className={className}>
       {isPhoto ? <Photo message={message} onOpen={onOpen} onBroken={onBroken} onShown={onShown} /> : null}
-      {message.body ? <p className="bubble__body">{message.body}</p> : null}
-      <span className="bubble__time">{clockTime(message.created_at)}</span>
+      {message.body ? <p className="bubble__body">{linkify(message.body)}</p> : null}
+      <span className="bubble__meta">
+        <span className="bubble__time">{clockTime(message.created_at)}</span>
+        {mine ? <Tick pending={message.pending} /> : null}
+      </span>
     </div>
+  );
+}
+
+/**
+ * The little status mark on your own messages.
+ *
+ * Deliberately two states, not three. A clock while it is in the air, one tick
+ * once the server has it. There is no second tick, because nothing in the room
+ * tracks whether the other person has actually read anything — inventing a
+ * "seen" mark would be a lie told in a place where honesty is the whole point.
+ */
+function Tick({ pending }) {
+  if (pending) {
+    return (
+      <svg className="tick tick--wait" viewBox="0 0 16 16" width="13" height="13" aria-label="Sending" role="img">
+        <circle cx="8" cy="8" r="6.4" fill="none" stroke="currentColor" strokeWidth="1.5" />
+        <path d="M8 4.6V8l2.2 1.6" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+      </svg>
+    );
+  }
+  return (
+    <svg className="tick" viewBox="0 0 16 16" width="13" height="13" aria-label="Sent" role="img">
+      <path
+        d="M2.6 8.6l3.2 3.2 7.6-7.6"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.9"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
   );
 }
 
@@ -934,49 +1075,33 @@ function sortByTime(a, b) {
   return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
 }
 
-/** Insert "Today" / "Yesterday" / a date between days. */
-function withDateSeparators(messages) {
-  const rows = [];
-  let lastKey = '';
-  for (const message of messages) {
-    const key = dayKey(message.created_at);
-    if (key !== lastKey) {
-      rows.push({ kind: 'date', key, label: dayLabel(message.created_at) });
-      lastKey = key;
-    }
-    rows.push({ kind: 'message', message });
-  }
-  return rows;
-}
+/**
+ * Turn URLs inside a message into real links.
+ *
+ * splitLinks does the finding (and is tested); this only decides what the
+ * pieces look like. They become React children, never HTML, so a message that
+ * happens to contain markup is still just text — the same guarantee the plain
+ * bubble always had.
+ */
+function linkify(text) {
+  const parts = splitLinks(text);
+  if (parts.length === 1 && parts[0].type === 'text') return parts[0].value;
 
-function dayKey(iso) {
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return 'x';
-  return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
-}
-
-function dayLabel(iso) {
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return '';
-  const today = new Date();
-  const yesterday = new Date(today.getTime() - 86400000);
-  if (dayKey(iso) === dayKey(today.toISOString())) return 'Today';
-  if (dayKey(iso) === dayKey(yesterday.toISOString())) return 'Yesterday';
-  try {
-    return d.toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' });
-  } catch {
-    return d.toDateString();
-  }
-}
-
-function clockTime(iso) {
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return '';
-  try {
-    return d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
-  } catch {
-    return '';
-  }
+  return parts.map((part, i) =>
+    part.type === 'link' ? (
+      <a
+        key={`l${i}`}
+        className="bubble__link"
+        href={part.value}
+        target="_blank"
+        rel="noopener noreferrer nofollow"
+      >
+        {part.value}
+      </a>
+    ) : (
+      part.value
+    ),
+  );
 }
 
 /** True when a message is nothing but emoji — worth a little heart burst. */
