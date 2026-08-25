@@ -164,6 +164,12 @@ alter table public.couple_messages add column if not exists reply_to   bigint;
 alter table public.couple_messages add column if not exists reactions  jsonb not null default '{}'::jsonb;
 alter table public.couple_messages add column if not exists deleted_at timestamptz;
 
+-- Voice notes reuse media_path (the extension says which kind it is) and add
+-- only their length in milliseconds. It is stored rather than read back from
+-- the file because MediaRecorder writes streaming WebM with no duration in
+-- the header, so audio.duration answers Infinity until it has played through.
+alter table public.couple_messages add column if not exists media_ms integer;
+
 
 -- ============================================================================
 -- PHOTOS — one extra step, in the dashboard rather than in SQL
@@ -262,6 +268,9 @@ drop policy if exists "public read couple_messages" on public.couple_messages;
 --   alter table public.couple_messages add column if not exists reply_to   bigint;
 --   alter table public.couple_messages add column if not exists reactions  jsonb not null default '{}'::jsonb;
 --   alter table public.couple_messages add column if not exists deleted_at timestamptz;
+--   alter table public.couple_messages add column if not exists media_ms integer;
+--
+-- Or just run supabase/upgrade.sql, which is all of them in one paste.
 --
 -- Everything else in this file is already idempotent, so a fresh paste of the
 -- whole thing is fine too.

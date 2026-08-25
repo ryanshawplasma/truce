@@ -27,9 +27,20 @@ import {
 import { COUPLE_MESSAGE_MAX as MAX_MESSAGE_LENGTH } from '@/lib/constants';
 import {
   MEDIA_ACCEPT,
+  MEDIA_AUDIO_BITS_PER_SECOND,
+  MEDIA_AUDIO_BROKEN_MESSAGE,
+  MEDIA_AUDIO_DENIED_MESSAGE,
+  MEDIA_AUDIO_MAX_BYTES,
+  MEDIA_AUDIO_MAX_MS,
+  MEDIA_AUDIO_MIN_MS,
+  MEDIA_AUDIO_TOO_SHORT_MESSAGE,
+  MEDIA_AUDIO_UNSUPPORTED_MESSAGE,
   MEDIA_BROKEN_MESSAGE,
   MEDIA_CAPTION_MAX,
   MEDIA_MAX_EDGE,
+  clockDuration,
+  mediaKind,
+  pickAudioFormat,
   MEDIA_MAX_ORIGINAL_BYTES,
   MEDIA_MAX_UPLOAD_BYTES,
   MEDIA_NOT_IMAGE_MESSAGE,
@@ -118,6 +129,227 @@ export default function CoupleRoom({ room, side, initialMessages = [] }) {
     }
     setNote((res && res.error) || 'Could not unsend that just now.');
   }, []);
+
+  /* ------------------------------------------------------------------ reply */
+
+  /* The message being answered, held whole rather than as an id: the composer
+     shows a line of it, and looking that up again on every keystroke would be
+     work for nothing. */
+  const [replyingTo, setReplyingTo] = useState(null);
+
+  const onReply = useCallback((message) => {
+    setReplyingTo(message);
+    if (inputRef.current) inputRef.current.focus();
+  }, []);
+
+  /* Quotes are resolved from what this browser already holds rather than
+     fetched: the reply and the message it answers are almost always both on
+     screen, and the poll only ever carries the recent window anyway. Anything
+     older than that renders as "message unavailable", which is honest. */
+  const byId = useMemo(() => {
+    const map = new Map();
+    for (const m of messages) map.set(m.id, m);
+    return map;
+  }, [messages]);
+
+  /* ------------------------------------------------------------ voice notes */
+
+  const [recording, setRecording] = useState(false);
+  const [recordMs, setRecordMs] = useState(0);
+  const recorderRef = useRef(null);
+  const streamRef = useRef(null);
+  const chunksRef = useRef([]);
+  const startedAtRef = useRef(0);
+  const tickRef = useRef(null);
+  const discardRef = useRef(false);
+
+  /* Letting go of the microphone matters more than most cleanup: a live track
+     keeps the browser's recording indicator lit, which on a phone looks exactly
+     like being listened to. */
+  const releaseMic = useCallback(() => {
+    if (streamRef.current) {
+      for (const track of streamRef.current.getTracks()) track.stop();
+      streamRef.current = null;
+    }
+    if (tickRef.current) {
+      window.clearInterval(tickRef.current);
+      tickRef.current = null;
+    }
+  }, []);
+
+  useEffect(() => releaseMic, [releaseMic]);
+
+  const uploadVoice = useCallback(
+    async (blob, heldMs, ext) => {
+      const tempId = -Date.now();
+      const previewUrl = URL.createObjectURL(blob);
+      previewUrlsRef.current.push(previewUrl);
+      const answering = replyingTo ? replyingTo.id : null;
+      setReplyingTo(null);
+
+      setMessages((current) => [
+        ...current,
+        {
+          id: tempId,
+          author: side,
+          body: '',
+          created_at: new Date().toISOString(),
+          media_path: 'pending',
+          media_kind: 'voice',
+          media_ms: heldMs,
+          local_url: previewUrl,
+          reply_to: answering,
+          pending: true,
+        },
+      ]);
+
+      const fail = (message) => {
+        setMessages((current) => current.filter((m) => m.id !== tempId));
+        setPhotoNote(message);
+      };
+
+      try {
+        const ticket = await withTimeout(getUploadUrl('voice', ext), 12000, {
+          ok: false,
+          error: 'That upload timed out.',
+        });
+        if (ticket.signedOut) {
+          router.push('/couple');
+          return;
+        }
+        if (!ticket.ok) return fail(ticket.error || MEDIA_AUDIO_BROKEN_MESSAGE);
+
+        const put = await fetch(ticket.signedUrl, {
+          method: 'PUT',
+          headers: { 'content-type': ext === 'm4a' ? 'audio/mp4' : 'audio/webm' },
+          body: blob,
+        });
+        if (!put.ok) return fail('That recording did not finish uploading. Try again?');
+
+        const res = await withTimeout(sendMessage('', ticket.path, answering, heldMs), 12000, {
+          ok: false,
+          error: 'That did not go through. Check your connection and try again.',
+        });
+        if (res.signedOut) {
+          router.push('/couple');
+          return;
+        }
+        if (!res.ok) return fail(res.error || MEDIA_AUDIO_BROKEN_MESSAGE);
+
+        setMessages((current) =>
+          merge(
+            current.filter((m) => m.id !== tempId),
+            [{ ...res.message, local_url: previewUrl }],
+          ),
+        );
+        highestIdRef.current = Math.max(highestIdRef.current, res.message.id);
+      } catch {
+        fail('Could not reach the server. Try again in a moment.');
+      }
+    },
+    [replyingTo, router, side],
+  );
+
+  const startRecording = useCallback(async () => {
+    setPhotoNote('');
+
+    const format = pickAudioFormat();
+    /* No MediaRecorder also means an insecure page — getUserMedia is HTTPS
+       only — so this covers "it silently does nothing on http" too. */
+    if (!format || typeof navigator === 'undefined' || !navigator.mediaDevices) {
+      setPhotoNote(MEDIA_AUDIO_UNSUPPORTED_MESSAGE);
+      return;
+    }
+
+    let stream;
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    } catch {
+      /* Denied, dismissed, or no microphone at all. The browser does not tell
+         them apart reliably, and the fix is the same sentence either way. */
+      setPhotoNote(MEDIA_AUDIO_DENIED_MESSAGE);
+      return;
+    }
+
+    let recorder;
+    try {
+      recorder = new window.MediaRecorder(stream, {
+        mimeType: format.mimeType,
+        audioBitsPerSecond: MEDIA_AUDIO_BITS_PER_SECOND,
+      });
+    } catch {
+      for (const track of stream.getTracks()) track.stop();
+      setPhotoNote(MEDIA_AUDIO_UNSUPPORTED_MESSAGE);
+      return;
+    }
+
+    streamRef.current = stream;
+    recorderRef.current = recorder;
+    chunksRef.current = [];
+    discardRef.current = false;
+    startedAtRef.current = Date.now();
+
+    recorder.ondataavailable = (event) => {
+      if (event.data && event.data.size) chunksRef.current.push(event.data);
+    };
+
+    recorder.onstop = () => {
+      const heldMs = Date.now() - startedAtRef.current;
+      const chunks = chunksRef.current;
+      chunksRef.current = [];
+      releaseMic();
+      setRecording(false);
+      setRecordMs(0);
+
+      if (discardRef.current) return;
+
+      /* A tap that never became a recording is a mis-tap, not a message. */
+      if (heldMs < MEDIA_AUDIO_MIN_MS) {
+        setPhotoNote(MEDIA_AUDIO_TOO_SHORT_MESSAGE);
+        return;
+      }
+
+      const blob = new Blob(chunks, { type: format.mimeType });
+      if (!blob.size) {
+        setPhotoNote(MEDIA_AUDIO_BROKEN_MESSAGE);
+        return;
+      }
+      if (blob.size > MEDIA_AUDIO_MAX_BYTES) {
+        setPhotoNote('That recording is too long to send 🤍');
+        return;
+      }
+
+      uploadVoice(blob, Math.min(heldMs, MEDIA_AUDIO_MAX_MS), format.ext);
+    };
+
+    recorder.start();
+    setRecording(true);
+    setRecordMs(0);
+
+    tickRef.current = window.setInterval(() => {
+      const held = Date.now() - startedAtRef.current;
+      setRecordMs(held);
+      /* Stops itself rather than letting somebody leave it running in a
+         pocket and then trying to upload twenty minutes of it. */
+      if (held >= MEDIA_AUDIO_MAX_MS && recorderRef.current && recorderRef.current.state === 'recording') {
+        recorderRef.current.stop();
+      }
+    }, 200);
+  }, [releaseMic, uploadVoice]);
+
+  const finishRecording = useCallback((discard) => {
+    discardRef.current = Boolean(discard);
+    const recorder = recorderRef.current;
+    if (recorder && recorder.state !== 'inactive') {
+      recorder.stop();
+      return;
+    }
+    /* Nothing was running — make sure the UI does not stay stuck in a state
+       the recorder has already left. */
+    releaseMic();
+    setRecording(false);
+    setRecordMs(0);
+  }, [releaseMic]);
   /* Timestamps and "Today" separators are formatted in the reader's own
      timezone, which the server cannot know — so the list is rendered after
      mount. The messages themselves already arrived with the first response,
@@ -340,18 +572,30 @@ export default function CoupleRoom({ room, side, initialMessages = [] }) {
     setSending(true);
     setNote('');
 
+    /* Taken now, not when the request lands: they may start typing the next
+       message — and clear the chip — while this one is still in the air. */
+    const answering = replyingTo ? replyingTo.id : null;
+    setReplyingTo(null);
+
     /* Optimistic: it appears immediately, greyed until the server confirms. */
     const tempId = -Date.now();
     setMessages((current) => [
       ...current,
-      { id: tempId, author: side, body: text.slice(0, MAX_MESSAGE_LENGTH), created_at: new Date().toISOString(), pending: true },
+      {
+        id: tempId,
+        author: side,
+        body: text.slice(0, MAX_MESSAGE_LENGTH),
+        created_at: new Date().toISOString(),
+        reply_to: answering,
+        pending: true,
+      },
     ]);
     setDraft('');
 
     if (isOnlyEmoji(text)) burstFrom(sendBtnRef.current, 14);
 
     try {
-      const res = await withTimeout(sendMessage(text), 10000, {
+      const res = await withTimeout(sendMessage(text, null, answering), 10000, {
         ok: false,
         error: 'That did not go through. Check your connection and try again.',
       });
@@ -448,6 +692,7 @@ export default function CoupleRoom({ room, side, initialMessages = [] }) {
           body: caption,
           created_at: new Date().toISOString(),
           media_path: 'pending',
+          media_kind: 'photo',
           local_url: previewUrl,
           pending: true,
         },
@@ -632,6 +877,8 @@ export default function CoupleRoom({ room, side, initialMessages = [] }) {
                   onShown={onPhotoShown}
                   onReact={onReact}
                   onUnsend={onUnsend}
+                  onReply={onReply}
+                  parent={row.message.reply_to ? byId.get(row.message.reply_to) : null}
                   side={side}
                 />
               ),
@@ -665,6 +912,26 @@ export default function CoupleRoom({ room, side, initialMessages = [] }) {
           at all once Truce is running from the home screen. */}
       <InstallPrompt className="corner__install" tone="wide" label="Add Truce to your home screen" />
 
+      {replyingTo ? (
+        <div className="corner__replying">
+          <span className="corner__replying-bar" aria-hidden="true" />
+          <span className="corner__replying-text">
+            <span className="corner__replying-who">
+              {replyingTo.author === side ? 'Replying to yourself' : 'Replying'}
+            </span>
+            <span className="corner__replying-body">{quotedText(replyingTo)}</span>
+          </span>
+          <button
+            type="button"
+            className="corner__replying-x"
+            onClick={() => setReplyingTo(null)}
+            aria-label="Stop replying"
+          >
+            ×
+          </button>
+        </div>
+      ) : null}
+
       <form className="corner__compose" onSubmit={submit}>
         <input
           ref={pickRef}
@@ -689,9 +956,48 @@ export default function CoupleRoom({ room, side, initialMessages = [] }) {
             <BetaChip tone="soft" />
           </span>
         </button>
+        {recording ? (
+          <div className="corner__recording" role="status" aria-live="polite">
+            <span className="corner__recording-dot" aria-hidden="true" />
+            <span className="corner__recording-time">{clockDuration(recordMs)}</span>
+            <span className="corner__recording-hint">Recording…</span>
+            <button
+              type="button"
+              className="corner__recording-cancel"
+              onClick={() => finishRecording(true)}
+              aria-label="Discard this recording"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              className="btn btn--primary corner__recording-send"
+              onClick={() => finishRecording(false)}
+              aria-label="Send this recording"
+            >
+              ↑
+            </button>
+          </div>
+        ) : null}
+
+        {/* The microphone stands where the words go, so it is never the thing
+            you hit while reaching for send. */}
+        {!recording ? (
+          <button
+            type="button"
+            className="corner__mic"
+            onClick={startRecording}
+            disabled={uploading || sending}
+            aria-label="Record a voice note"
+            title="Record a voice note"
+          >
+            🎙️
+          </button>
+        ) : null}
+
         <textarea
           ref={inputRef}
-          className="corner__input"
+          className={recording ? 'corner__input is-hidden' : 'corner__input'}
           rows={1}
           maxLength={MAX_MESSAGE_LENGTH}
           placeholder="Say it here…"
@@ -710,8 +1016,8 @@ export default function CoupleRoom({ room, side, initialMessages = [] }) {
         <button
           ref={sendBtnRef}
           type="submit"
-          className="btn btn--primary corner__send"
-          disabled={sending || !draft.trim()}
+          className={recording ? 'btn btn--primary corner__send is-hidden' : 'btn btn--primary corner__send'}
+          disabled={sending || !draft.trim() || recording}
           aria-label="Send"
         >
           {sending ? <span className="spinner" aria-hidden="true" /> : '↑'}
@@ -750,6 +1056,109 @@ export default function CoupleRoom({ room, side, initialMessages = [] }) {
   );
 }
 
+/**
+ * One line of a message, for a quote.
+ *
+ * A quote has to say something even when the message had no words at all — a
+ * photo, a voice note, or something that was unsent since. Falling through to
+ * an empty string would render a quote box with nothing in it, which reads as
+ * broken rather than as brief.
+ */
+function quotedText(message) {
+  if (!message) return 'Message unavailable';
+  if (message.deleted_at) return 'Unsent';
+
+  const kind = message.media_kind || mediaKind(message.media_path);
+  const body = String(message.body || '').replace(/\s+/g, ' ').trim();
+
+  if (kind === 'voice') return body || `Voice note · ${clockDuration(message.media_ms)}`;
+  if (message.media_path) return body || 'Photo';
+
+  if (!body) return 'Message';
+  return body.length > 90 ? `${body.slice(0, 89)}…` : body;
+}
+
+/* --------------------------------------------------------------- voice note */
+
+/**
+ * A voice note: one button, one line, one length.
+ *
+ * Deliberately not a native <audio controls>. Chrome, Safari and Firefox each
+ * draw a different widget with a different height, and all three look like a
+ * browser part dropped into a conversation.
+ *
+ * The duration comes from media_ms — measured while recording — rather than
+ * from the file, because streaming WebM carries no duration in its header and
+ * answers Infinity until it has played through once. Where media_ms is missing
+ * (a note recorded before the column existed) the element's own metadata is
+ * used, and clockDuration turns whatever nonsense that is into 0:00.
+ */
+function VoiceNote({ message, mine }) {
+  const audioRef = useRef(null);
+  const [playing, setPlaying] = useState(false);
+  const [atMs, setAtMs] = useState(0);
+  const [fallbackMs, setFallbackMs] = useState(0);
+
+  const src = message.local_url || message.media_url || '';
+  const totalMs = Number(message.media_ms) > 0 ? Number(message.media_ms) : fallbackMs;
+  const progress = totalMs > 0 ? Math.min(100, (atMs / totalMs) * 100) : 0;
+
+  const toggle = () => {
+    const el = audioRef.current;
+    if (!el) return;
+    if (el.paused) {
+      el.play().catch(() => setPlaying(false));
+    } else {
+      el.pause();
+    }
+  };
+
+  if (message.pending && !src) {
+    return (
+      <span className="voice voice--waiting">
+        <span className="spinner spinner--ink" aria-hidden="true" />
+        <span className="voice__time">Sending…</span>
+      </span>
+    );
+  }
+
+  return (
+    <span className={mine ? 'voice voice--mine' : 'voice'}>
+      <button
+        type="button"
+        className="voice__play"
+        onClick={toggle}
+        aria-label={playing ? 'Pause voice note' : 'Play voice note'}
+      >
+        <span aria-hidden="true">{playing ? '❚❚' : '▶'}</span>
+      </button>
+
+      <span className="voice__track" aria-hidden="true">
+        <span className="voice__fill" style={{ width: `${progress}%` }} />
+      </span>
+
+      <span className="voice__time">{clockDuration(playing || atMs ? totalMs - atMs : totalMs)}</span>
+
+      <audio
+        ref={audioRef}
+        src={src}
+        preload="metadata"
+        onPlay={() => setPlaying(true)}
+        onPause={() => setPlaying(false)}
+        onTimeUpdate={(e) => setAtMs(e.currentTarget.currentTime * 1000)}
+        onLoadedMetadata={(e) => {
+          const seconds = e.currentTarget.duration;
+          if (Number.isFinite(seconds) && seconds > 0) setFallbackMs(seconds * 1000);
+        }}
+        onEnded={() => {
+          setPlaying(false);
+          setAtMs(0);
+        }}
+      />
+    </span>
+  );
+}
+
 /* ------------------------------------------------------------------ bubbles */
 
 function Bubble({
@@ -762,11 +1171,17 @@ function Bubble({
   onShown,
   onReact,
   onUnsend,
+  onReply,
+  parent,
   side,
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const gone = Boolean(message.deleted_at);
-  const isPhoto = !gone && Boolean(message.media_path);
+  /* An optimistic row knows its own kind; a real one is read off the path,
+     because the extension is the only thing that says which it is. */
+  const kind = gone ? null : message.media_kind || mediaKind(message.media_path);
+  const isVoice = kind === 'voice';
+  const isPhoto = !gone && !isVoice && Boolean(message.media_path);
   const reactionList = Object.entries(normaliseReactions(message.reactions));
   /* A message still in the air has no id the server would recognise, so there
      is nothing yet to react to or unsend. */
@@ -785,6 +1200,22 @@ function Bubble({
 
   return (
     <div className={className}>
+      {message.reply_to && !gone ? (
+        <span className="quote">
+          <span className="quote__bar" aria-hidden="true" />
+          <span className="quote__text">
+            {parent ? (
+              quotedText(parent)
+            ) : (
+              /* Either it scrolled out of the window we hold, or it was
+                 unsent. Saying so beats an empty box. */
+              <em className="quote__missing">Message unavailable</em>
+            )}
+          </span>
+        </span>
+      ) : null}
+
+      {isVoice ? <VoiceNote message={message} mine={mine} /> : null}
       {isPhoto ? <Photo message={message} onOpen={onOpen} onBroken={onBroken} onShown={onShown} /> : null}
 
       {gone ? (
@@ -848,6 +1279,17 @@ function Bubble({
                   </button>
                 ))}
               </span>
+
+              <button
+                type="button"
+                className="bubble__reply"
+                onClick={() => {
+                  setMenuOpen(false);
+                  if (onReply) onReply(message);
+                }}
+              >
+                Reply
+              </button>
 
               {mine ? (
                 <button
@@ -1241,7 +1683,11 @@ function merge(current, incoming) {
         !claimed.has(x.id) &&
         x.author === m.author &&
         x.body === m.body &&
-        Boolean(x.media_path) === Boolean(m.media_path),
+        Boolean(x.media_path) === Boolean(m.media_path) &&
+        /* Kind as well as presence: a photo and a voice note sent in the same
+           breath are both "has media" with an empty body, and without this
+           they can retire each other's placeholder and swap pictures. */
+        (m.media_kind || null) === (x.media_path ? mediaKind(x.media_path) : null),
     );
     if (!match) return true;
     claimed.add(match.id);

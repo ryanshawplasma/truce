@@ -7,6 +7,7 @@ import { backoffMs, clientKey, sleep, strikeLimit, takeLimit } from '@/lib/throt
 import { tidyAndTruncate } from '@/lib/truncate';
 import { isAllowedReaction } from '@/lib/chat';
 import {
+  MEDIA_AUDIO_MAX_MS,
   MEDIA_CAPTION_MAX,
   MEDIA_SETUP_MESSAGE,
   MEDIA_THROTTLE_MESSAGE,
@@ -272,7 +273,7 @@ function pruneLastSent(now) {
   }
 }
 
-export async function sendMessage(body, mediaPath = null) {
+export async function sendMessage(body, mediaPath = null, replyTo = null, mediaMs = null) {
   if (!isSupabaseConfigured()) return { ok: false, error: NO_DB };
 
   const session = await currentSession();
@@ -308,7 +309,20 @@ export async function sendMessage(body, mediaPath = null) {
   }
   lastSentAt.set(key, now);
 
-  const result = await insertMessage(session.roomId, session.side, text, media);
+  /* A reply names an id and nothing more. It is not checked against this room:
+     the quote is resolved from what the reader already holds, so an id from
+     somewhere else renders as "message unavailable" and reveals nothing. What
+     it must not be is a way to write junk into a bigint column. */
+  const answering = Number(replyTo);
+  const parent = Number.isInteger(answering) && answering > 0 ? answering : null;
+
+  /* Length is measured by the recorder, so it is a claim from the browser.
+     Clamped rather than trusted — the worst a lie can do is mislabel a bar. */
+  const claimed = Number(mediaMs);
+  const heldMs =
+    Number.isFinite(claimed) && claimed > 0 ? Math.min(Math.round(claimed), MEDIA_AUDIO_MAX_MS) : null;
+
+  const result = await insertMessage(session.roomId, session.side, text, media, parent, heldMs);
   if (result.error) {
     lastSentAt.delete(key); // a failed send should not cost them their turn
     if (result.setup) return { ok: false, setup: true, error: MEDIA_SETUP_MESSAGE };
@@ -334,7 +348,7 @@ export async function sendMessage(body, mediaPath = null) {
  * accidental loop filling a free-tier bucket, not to defeat a determined
  * person — see the long note in lib/throttle.js.
  */
-export async function getUploadUrl() {
+export async function getUploadUrl(kind = 'photo', audioExt = 'webm') {
   if (!isSupabaseConfigured()) return { ok: false, setup: true, error: MEDIA_SETUP_MESSAGE };
 
   const session = await currentSession();
@@ -343,7 +357,16 @@ export async function getUploadUrl() {
   const gate = await takeLimit('corner:upload', `${session.roomId}:${session.side}`, MEDIA_UPLOADS_PER_HOUR, 60 * 60 * 1000);
   if (!gate.ok) return { ok: false, throttled: true, error: MEDIA_THROTTLE_MESSAGE };
 
-  const ticket = await createMediaUploadTicket(session.roomId);
+  /* 'voice' or anything else, which means a photo. The browser picks the kind
+     but never the extension or the content type — those are decided here, so
+     the object's name always matches the bytes that go into it. */
+  const voice = kind === 'voice';
+  const ticket = await createMediaUploadTicket(
+    session.roomId,
+    voice
+      ? { ext: audioExt === 'm4a' ? 'm4a' : 'webm', contentType: audioExt === 'm4a' ? 'audio/mp4' : 'audio/webm' }
+      : { ext: 'jpg', contentType: 'image/jpeg' },
+  );
   if (ticket.error) {
     /* 'nobucket' is the one the site owner can fix in thirty seconds, and the
        only one worth putting in front of the people in the room. */
