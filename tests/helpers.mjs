@@ -32,7 +32,7 @@ export function missingColumn(name) {
 }
 
 /** The columns added after the first release, newest group last. */
-export const LATER_COLUMNS = ['reply_to', 'reactions', 'deleted_at', 'media_ms'];
+export const LATER_COLUMNS = ['reply_to', 'reactions', 'deleted_at', 'media_ms', 'edited_at'];
 
 /**
  * A database that has some columns and not others.

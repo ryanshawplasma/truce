@@ -170,6 +170,11 @@ alter table public.couple_messages add column if not exists deleted_at timestamp
 -- the header, so audio.duration answers Infinity until it has played through.
 alter table public.couple_messages add column if not exists media_ms integer;
 
+-- When the message was last edited, or NULL if it never was. The bubble says
+-- "edited" off the back of it: a chat where messages change silently is one
+-- where you cannot trust what you remember reading.
+alter table public.couple_messages add column if not exists edited_at timestamptz;
+
 
 -- ============================================================================
 -- PHOTOS — one extra step, in the dashboard rather than in SQL
@@ -269,6 +274,7 @@ drop policy if exists "public read couple_messages" on public.couple_messages;
 --   alter table public.couple_messages add column if not exists reactions  jsonb not null default '{}'::jsonb;
 --   alter table public.couple_messages add column if not exists deleted_at timestamptz;
 --   alter table public.couple_messages add column if not exists media_ms integer;
+--   alter table public.couple_messages add column if not exists edited_at timestamptz;
 --
 -- Or just run supabase/upgrade.sql, which is all of them in one paste.
 --

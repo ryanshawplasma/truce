@@ -2564,6 +2564,65 @@ html[data-appearance="blush"] .appearance__opt--sky{display:none}
 }
 .bubble__reply:hover{background:var(--accent-soft)}
 
+/* ---------- Search -------------------------------------------------------
+   Over the window the room already holds, which is why the scope line at the
+   bottom exists: "nothing matches" is a smaller claim than "it was never
+   said", and the difference matters in this particular room. */
+.search{
+  display:flex;flex-direction:column;gap:8px;
+  flex:1 1 auto;min-height:0;
+  padding:12px;
+  background:var(--card);
+  border-radius:var(--r-md);
+}
+.search__input{
+  width:100%;padding:11px 13px;
+  border:1px solid var(--line);border-radius:999px;
+  background:var(--page);color:var(--ink);
+  font:inherit;font-size:.92rem;
+}
+.search__input:focus{outline:2px solid var(--accent);outline-offset:1px}
+.search__count{margin:0;font-size:.74rem;font-weight:800;color:var(--ink-soft)}
+.search__results{display:flex;flex-direction:column;gap:6px;overflow-y:auto;min-height:0}
+.search__hit{
+  display:grid;grid-template-columns:auto 1fr auto;gap:8px;align-items:baseline;
+  width:100%;padding:9px 11px;
+  border:1px solid var(--line);border-radius:var(--r-sm);
+  background:var(--page);color:var(--ink);
+  font:inherit;text-align:left;cursor:pointer;
+}
+.search__hit:hover{background:var(--accent-chip);border-color:var(--accent-line)}
+.search__hit-who{font-size:.7rem;font-weight:800;color:var(--ink-soft);white-space:nowrap}
+.search__hit-body{
+  font-size:.85rem;min-width:0;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+}
+.search__hit-when{font-size:.66rem;color:var(--ink-faint);white-space:nowrap}
+.search__mark{background:var(--accent-soft);color:var(--ink);border-radius:3px;padding:0 1px}
+.search__scope{margin:0;font-size:.68rem;color:var(--ink-faint)}
+
+/* Landing on a message after a jump: lit for a moment, then ordinary again. */
+.bubble.is-flash{animation:bubbleFlash 1.8s ease-out 1}
+@keyframes bubbleFlash{
+  0%,32%{box-shadow:0 0 0 3px var(--accent-line)}
+  100%{box-shadow:0 0 0 3px transparent}
+}
+@media (prefers-reduced-motion:reduce){
+  .bubble.is-flash{animation:none;box-shadow:0 0 0 3px var(--accent-line)}
+}
+
+/* "edited", said out loud next to the time. Quiet, but never absent. */
+.bubble__edited{
+  font-size:.62rem;font-weight:700;font-style:italic;
+  color:var(--ink-faint);letter-spacing:.01em;
+}
+.bubble--mine .bubble__edited{color:rgba(255,255,255,.7)}
+
+/* The editing chip reuses the reply chip; only the accent differs, so the two
+   states are never mistaken for one another at a glance. */
+.corner__replying--edit .corner__replying-bar{background:var(--ink-mid)}
+.corner__replying--edit .corner__replying-who{color:var(--ink-mid)}
+
 /* ---------- Quotes ------------------------------------------------------- */
 .quote{
   display:flex;gap:7px;align-items:stretch;

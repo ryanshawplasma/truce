@@ -268,3 +268,110 @@ test('the Gallery asks the database for photos, not for anything with a path', a
   /* Doing this in JavaScript after the fact would work and would also page
      through recordings to find the photos, so the limit would start lying. */
 });
+
+/* -- editing, on a table with no edited_at -------------------------------- */
+
+test('editing says setup rather than throwing', async () => {
+  useFakeSupabase(
+    fakeSupabase({
+      respond: withoutColumns(NEW, () => ({ data: [], error: null })),
+    }),
+  );
+
+  const { editMessage, listMessages } = await freshCouple();
+  await listMessages('room00000001', 0);
+
+  const result = await editMessage('room00000001', 1, 1, 'second thoughts');
+  assert.equal(result.setup, true);
+});
+
+test('a missing edited_at does not take reply, reactions or lengths with it', async () => {
+  useFakeSupabase(
+    fakeSupabase({
+      respond: withoutColumns(['edited_at'], (q) => {
+        if (q.insert) return { data: rowFrom(q.insert), error: null };
+        return { data: [], error: null };
+      }),
+    }),
+  );
+
+  const { listMessages, areExtrasMissing, isDurationColumnMissing, isEditColumnMissing } =
+    await freshCouple();
+  await listMessages('room00000001', 0);
+
+  assert.equal(isEditColumnMissing(), true, 'editing is the thing that is off');
+  assert.equal(areExtrasMissing(), false, 'reply and reactions keep working');
+  assert.equal(isDurationColumnMissing(), false, 'voice-note lengths keep working');
+});
+
+/* -- the rules editing enforces regardless of schema ---------------------- */
+
+test('you cannot edit the other person\u2019s message', async () => {
+  useFakeSupabase(
+    fakeSupabase({
+      respond: () => ({
+        data: { id: 5, author: 2, body: 'theirs', media_path: null, deleted_at: null },
+        error: null,
+      }),
+    }),
+  );
+
+  const { editMessage } = await freshCouple();
+  const result = await editMessage('room00000001', 5, 1, 'not yours to change');
+
+  assert.match(result.error, /your own/);
+});
+
+test('a photo or a voice note cannot be edited into something else', async () => {
+  useFakeSupabase(
+    fakeSupabase({
+      respond: () => ({
+        data: { id: 6, author: 1, body: 'caption', media_path: 'room00000001/abcdef123456.jpg', deleted_at: null },
+        error: null,
+      }),
+    }),
+  );
+
+  const { editMessage } = await freshCouple();
+  const result = await editMessage('room00000001', 6, 1, 'a different caption');
+
+  assert.match(result.error, /cannot be edited/);
+});
+
+test('an unsent message cannot be edited back into existence', async () => {
+  useFakeSupabase(
+    fakeSupabase({
+      respond: () => ({
+        data: { id: 7, author: 1, body: '', media_path: null, deleted_at: 'now' },
+        error: null,
+      }),
+    }),
+  );
+
+  const { editMessage } = await freshCouple();
+  const result = await editMessage('room00000001', 7, 1, 'undo that');
+
+  assert.match(result.error, /unsent/);
+});
+
+test('saving the same words is not an edit, and stamps nothing', async () => {
+  let wrote = false;
+  useFakeSupabase(
+    fakeSupabase({
+      respond: (q) => {
+        if (q.update) wrote = true;
+        return {
+          data: { id: 8, author: 1, body: 'unchanged', media_path: null, deleted_at: null },
+          error: null,
+        };
+      },
+    }),
+  );
+
+  const { editMessage } = await freshCouple();
+  const result = await editMessage('room00000001', 8, 1, 'unchanged');
+
+  assert.equal(result.unchanged, true);
+  /* Writing anyway would stamp "edited" onto a message nobody changed. */
+  assert.equal(wrote, false, 'no write happens at all');
+});

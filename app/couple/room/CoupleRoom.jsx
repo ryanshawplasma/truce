@@ -7,6 +7,7 @@ import {
   getClosingState,
   getGallery,
   getMessages,
+  editText,
   getUploadUrl,
   leaveRoom,
   refreshMedia,
@@ -20,7 +21,9 @@ import {
   REACTIONS,
   buildRows,
   clockTime,
+  highlight,
   normaliseReactions,
+  searchMessages,
   splitLinks,
   toggleReactionSet,
 } from '@/lib/chat';
@@ -140,6 +143,25 @@ export default function CoupleRoom({ room, side, initialMessages = [] }) {
   const onReply = useCallback((message) => {
     setReplyingTo(message);
     if (inputRef.current) inputRef.current.focus();
+  }, []);
+
+  /* ------------------------------------------------------------------- edit */
+
+  /* The message being rewritten. The composer doubles as the editor rather
+     than growing a second box inside the bubble: one place words are typed,
+     one keyboard on a phone, one Enter key that means the same thing. */
+  const [editing, setEditing] = useState(null);
+
+  const onEdit = useCallback((message) => {
+    setEditing(message);
+    setReplyingTo(null);
+    setDraft(String(message.body || ''));
+    if (inputRef.current) inputRef.current.focus();
+  }, []);
+
+  const cancelEdit = useCallback(() => {
+    setEditing(null);
+    setDraft('');
   }, []);
 
   /* Quotes are resolved from what this browser already holds rather than
@@ -359,6 +381,44 @@ export default function CoupleRoom({ room, side, initialMessages = [] }) {
   /* Photos */
   const [uploading, setUploading] = useState(false);
   const [photoNote, setPhotoNote] = useState('');
+  /* ----------------------------------------------------------------- search */
+
+  const [searching, setSearching] = useState(false);
+  const [query, setQuery] = useState('');
+  const searchRef = useRef(null);
+
+  const hits = useMemo(() => (searching ? searchMessages(messages, query) : []), [searching, query, messages]);
+
+  const toggleSearch = useCallback(() => {
+    setSearching((on) => {
+      if (on) setQuery('');
+      return !on;
+    });
+  }, []);
+
+  /* Which message is briefly lit after being jumped to. A result opened out of
+     the conversation around it is half an answer, so search closes and the
+     room scrolls to it instead of showing it in a list of its own. */
+  const [flash, setFlash] = useState(null);
+
+  const jumpTo = useCallback((id) => {
+    setFlash(id);
+    /* The list is still showing the search panel this tick; wait for the room
+       to be back on screen before looking for a row inside it. */
+    window.requestAnimationFrame(() => {
+      window.requestAnimationFrame(() => {
+        const list = listRef.current;
+        const el = list && list.querySelector(`[data-mid="${id}"]`);
+        if (el && el.scrollIntoView) el.scrollIntoView({ block: 'center', behavior: 'smooth' });
+      });
+    });
+    window.setTimeout(() => setFlash((current) => (current === id ? null : current)), 1800);
+  }, []);
+
+  useEffect(() => {
+    if (searching && searchRef.current) searchRef.current.focus();
+  }, [searching]);
+
   const [view, setView] = useState('chat'); // 'chat' | 'gallery'
   const [gallery, setGallery] = useState({ state: 'idle', photos: [], setup: false });
   const [viewer, setViewer] = useState(null); // { src, caption }
@@ -563,10 +623,74 @@ export default function CoupleRoom({ room, side, initialMessages = [] }) {
   }, [draft, autoGrow]);
 
   /* ----------------------------------------------------------------- sending */
+  /**
+   * Save a rewrite.
+   *
+   * Optimistic like a send is, and for the same reason — but it restores the
+   * ORIGINAL words if the server refuses, not the ones they typed. A failed
+   * edit that leaves the new text sitting in the bubble is a message that says
+   * something its author never sent.
+   */
+  const saveEdit = async (text) => {
+    const target = editing;
+    if (!target || sendingRef.current) return;
+
+    sendingRef.current = true;
+    setSending(true);
+    setNote('');
+
+    const original = target.body;
+    setEditing(null);
+    setDraft('');
+
+    setMessages((current) =>
+      current.map((m) =>
+        m.id === target.id ? { ...m, body: text, edited_at: new Date().toISOString(), pending: true } : m,
+      ),
+    );
+
+    const putBack = (message) => {
+      setMessages((current) =>
+        current.map((m) =>
+          m.id === target.id ? { ...m, body: original, edited_at: target.edited_at || null, pending: false } : m,
+        ),
+      );
+      setNote(message);
+    };
+
+    try {
+      const res = await withTimeout(editText(target.id, text), 10000, {
+        ok: false,
+        error: 'That change did not go through. Check your connection and try again.',
+      });
+      if (res.signedOut) {
+        router.push('/couple');
+        return;
+      }
+      if (!res.ok) {
+        putBack(res.error || 'Could not change that.');
+        return;
+      }
+
+      setMessages((current) =>
+        current.map((m) => (m.id === target.id ? { ...m, ...(res.message || {}), pending: false } : m)),
+      );
+    } catch {
+      putBack('Could not reach the server. Try again in a moment.');
+    } finally {
+      sendingRef.current = false;
+      setSending(false);
+      if (inputRef.current) inputRef.current.focus();
+    }
+  };
+
   const submit = async (e) => {
     if (e) e.preventDefault();
     const text = draft.replace(/\r\n/g, '\n').trim();
     if (!text || sendingRef.current) return;
+
+    /* Same box, same Enter key, different verb. */
+    if (editing) return saveEdit(text);
 
     sendingRef.current = true;
     setSending(true);
@@ -819,6 +943,15 @@ export default function CoupleRoom({ room, side, initialMessages = [] }) {
         <div className="corner__actions">
           <button
             type="button"
+            className={`btn btn--ghost btn--sm${searching ? ' is-on' : ''}`}
+            onClick={toggleSearch}
+            aria-pressed={searching}
+            aria-label={searching ? 'Close search' : 'Search this corner'}
+          >
+            {searching ? 'Close' : '🔍'}
+          </button>
+          <button
+            type="button"
             className={`btn btn--ghost btn--sm corner__gallery-btn${view === 'gallery' ? ' is-on' : ''}`}
             onClick={toggleGallery}
             aria-pressed={view === 'gallery'}
@@ -842,6 +975,66 @@ export default function CoupleRoom({ room, side, initialMessages = [] }) {
             ? 'They have asked to close this corner — tap to read what that means'
             : 'You have asked to close this corner — tap to change your mind'}
         </button>
+      ) : null}
+
+      {searching ? (
+        <div className="search">
+          <input
+            ref={searchRef}
+            type="search"
+            className="search__input"
+            placeholder="Search what you have said…"
+            value={query}
+            aria-label="Search this corner"
+            onChange={(e) => setQuery(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Escape') toggleSearch();
+            }}
+          />
+
+          <p className="search__count" role="status">
+            {!query.trim()
+              ? 'Type to search.'
+              : hits.length === 0
+                ? 'Nothing matches.'
+                : `${hits.length} ${hits.length === 1 ? 'message' : 'messages'}`}
+          </p>
+
+          <div className="search__results">
+            {hits.map((m) => (
+              <button
+                key={m.id}
+                type="button"
+                className={m.author === side ? 'search__hit search__hit--mine' : 'search__hit'}
+                onClick={() => {
+                  /* Close search and land on the message in its own context —
+                     a result out of the conversation around it is half an
+                     answer. */
+                  toggleSearch();
+                  jumpTo(m.id);
+                }}
+              >
+                <span className="search__hit-who">{m.author === side ? 'You' : room.name}</span>
+                <span className="search__hit-body">
+                  {highlight(m.body, query).map((part, i) =>
+                    part.hit ? (
+                      <mark key={i} className="search__mark">
+                        {part.text}
+                      </mark>
+                    ) : (
+                      <span key={i}>{part.text}</span>
+                    ),
+                  )}
+                </span>
+                <span className="search__hit-when">{clockTime(m.created_at)}</span>
+              </button>
+            ))}
+          </div>
+
+          {/* Said plainly rather than implied: the room holds a recent window,
+              so "nothing matches" is not the same claim as "it was never said". */}
+          <p className="search__scope">Searches the messages this device has loaded.</p>
+        </div>
       ) : null}
 
       {view === 'gallery' ? (
@@ -878,6 +1071,8 @@ export default function CoupleRoom({ room, side, initialMessages = [] }) {
                   onReact={onReact}
                   onUnsend={onUnsend}
                   onReply={onReply}
+                  onEdit={onEdit}
+                  flash={flash === row.message.id}
                   parent={row.message.reply_to ? byId.get(row.message.reply_to) : null}
                   side={side}
                 />
@@ -912,7 +1107,25 @@ export default function CoupleRoom({ room, side, initialMessages = [] }) {
           at all once Truce is running from the home screen. */}
       <InstallPrompt className="corner__install" tone="wide" label="Add Truce to your home screen" />
 
-      {replyingTo ? (
+      {editing ? (
+        <div className="corner__replying corner__replying--edit">
+          <span className="corner__replying-bar" aria-hidden="true" />
+          <span className="corner__replying-text">
+            <span className="corner__replying-who">Editing your message</span>
+            <span className="corner__replying-body">{quotedText(editing)}</span>
+          </span>
+          <button
+            type="button"
+            className="corner__replying-x"
+            onClick={cancelEdit}
+            aria-label="Stop editing and leave the message as it was"
+          >
+            ×
+          </button>
+        </div>
+      ) : null}
+
+      {replyingTo && !editing ? (
         <div className="corner__replying">
           <span className="corner__replying-bar" aria-hidden="true" />
           <span className="corner__replying-text">
@@ -1007,6 +1220,11 @@ export default function CoupleRoom({ room, side, initialMessages = [] }) {
           onKeyDown={(e) => {
             /* Enter sends, Shift+Enter makes a new line — phone keyboards send
                a plain Enter, which is what people expect here. */
+            if (e.key === 'Escape' && editing) {
+              e.preventDefault();
+              cancelEdit();
+              return;
+            }
             if (e.key === 'Enter' && !e.shiftKey) {
               e.preventDefault();
               submit();
@@ -1020,7 +1238,7 @@ export default function CoupleRoom({ room, side, initialMessages = [] }) {
           disabled={sending || !draft.trim() || recording}
           aria-label="Send"
         >
-          {sending ? <span className="spinner" aria-hidden="true" /> : '↑'}
+          {sending ? <span className="spinner" aria-hidden="true" /> : editing ? '✓' : '↑'}
         </button>
       </form>
 
@@ -1172,6 +1390,8 @@ function Bubble({
   onReact,
   onUnsend,
   onReply,
+  onEdit,
+  flash,
   parent,
   side,
 }) {
@@ -1194,12 +1414,13 @@ function Bubble({
     gone ? 'bubble--gone' : '',
     firstOfGroup ? 'is-first' : '',
     lastOfGroup ? 'is-last' : '',
+    flash ? 'is-flash' : '',
   ]
     .filter(Boolean)
     .join(' ');
 
   return (
-    <div className={className}>
+    <div className={className} data-mid={message.id}>
       {message.reply_to && !gone ? (
         <span className="quote">
           <span className="quote__bar" aria-hidden="true" />
@@ -1225,6 +1446,9 @@ function Bubble({
       ) : null}
 
       <span className="bubble__meta">
+        {/* Said out loud, always. A chat where messages can change quietly is
+            one where you cannot trust what you remember reading. */}
+        {message.edited_at && !gone ? <span className="bubble__edited">edited</span> : null}
         <span className="bubble__time">{clockTime(message.created_at)}</span>
         {mine && !gone ? <Tick pending={message.pending} /> : null}
       </span>
@@ -1290,6 +1514,21 @@ function Bubble({
               >
                 Reply
               </button>
+
+              {/* Words only. A caption edit that could also swap the photo is
+                  a different feature with different consequences. */}
+              {mine && !isPhoto && !isVoice ? (
+                <button
+                  type="button"
+                  className="bubble__reply"
+                  onClick={() => {
+                    setMenuOpen(false);
+                    if (onEdit) onEdit(message);
+                  }}
+                >
+                  Edit
+                </button>
+              ) : null}
 
               {mine ? (
                 <button

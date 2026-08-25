@@ -91,16 +91,29 @@ alter table public.couple_messages add column if not exists media_ms integer;
 
 
 -- ----------------------------------------------------------------------------
+-- 5. Editing a message                                         (adds: 1 column)
+-- ----------------------------------------------------------------------------
+-- When the message was last changed, or NULL if it never was.
+--
+-- The bubble says "edited" off the back of this, which is the point: a chat
+-- where messages can change silently is a chat where you cannot trust what you
+-- remember reading. Only the author can edit, only their own words, and only
+-- the body — an edit cannot turn a photo into something else.
+
+alter table public.couple_messages add column if not exists edited_at timestamptz;
+
+
+-- ----------------------------------------------------------------------------
 -- Check it worked
 -- ----------------------------------------------------------------------------
--- Should list all seven of the columns above.
+-- Should list all eight of the columns above.
 
 select column_name, data_type
   from information_schema.columns
  where table_schema = 'public'
    and (
         (table_name = 'couple_messages'
-         and column_name in ('media_path', 'reply_to', 'reactions', 'deleted_at', 'media_ms'))
+         and column_name in ('media_path', 'reply_to', 'reactions', 'deleted_at', 'media_ms', 'edited_at'))
      or (table_name = 'couple_rooms'
          and column_name in ('delete_asked_1', 'delete_asked_2'))
        )

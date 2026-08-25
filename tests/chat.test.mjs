@@ -212,3 +212,99 @@ test('the palette is small enough to be a question, not a wall', () => {
   assert.ok(REACTIONS.length > 0 && REACTIONS.length <= 8);
   assert.equal(new Set(REACTIONS).size, REACTIONS.length);
 });
+
+/* -- search ---------------------------------------------------------------
+   Over the window the room already holds. Every case here is about matching
+   the way a person types, not the way the text was stored. */
+
+const { foldForSearch, searchMessages, highlight } = await import('../lib/chat.js');
+
+const said = (id, body, extra = {}) => ({ id, author: 1, body, created_at: 'now', ...extra });
+
+test('search ignores case and accents, because typing does', () => {
+  const rows = [said(1, 'meet me at the Café'), said(2, 'nowhere near')];
+  const hits = searchMessages(rows, 'cafe');
+  assert.equal(hits.length, 1);
+  assert.equal(hits[0].id, 1);
+});
+
+test('results come back newest first', () => {
+  const rows = [said(1, 'sorry'), said(2, 'sorry again'), said(3, 'and again, sorry')];
+  assert.deepEqual(
+    searchMessages(rows, 'sorry').map((m) => m.id),
+    [3, 2, 1],
+  );
+});
+
+test('an unsent message never turns up in a search', () => {
+  /* Its body is empty in the database anyway — but a search that could surface
+     something somebody took back would be a way of reading what they withdrew. */
+  const rows = [said(1, 'the thing I regret', { deleted_at: 'now' }), said(2, 'fine')];
+  assert.deepEqual(searchMessages(rows, 'regret'), []);
+});
+
+test('an empty query finds nothing rather than everything', () => {
+  const rows = [said(1, 'anything')];
+  for (const q of ['', '   ', null, undefined]) {
+    assert.deepEqual(searchMessages(rows, q), []);
+  }
+});
+
+test('search survives a list with holes in it', () => {
+  assert.deepEqual(searchMessages([null, undefined, said(1, 'here')], 'here').length, 1);
+  assert.deepEqual(searchMessages(null, 'here'), []);
+});
+
+test('highlight splits around every occurrence, keeping the original text', () => {
+  const parts = highlight('sorry, truly sorry', 'sorry');
+  assert.equal(parts.map((p) => p.text).join(''), 'sorry, truly sorry');
+  assert.deepEqual(
+    parts.filter((p) => p.hit).map((p) => p.text),
+    ['sorry', 'sorry'],
+  );
+});
+
+test('highlight preserves the original casing of what it matched', () => {
+  const parts = highlight('Sorry', 'sorry');
+  assert.deepEqual(parts, [{ text: 'Sorry', hit: true }]);
+});
+
+test('a precomposed accent highlights normally, keeping its accent', () => {
+  /* "café" as one é character folds to the same LENGTH, so offsets line up and
+     the match can be marked. This is what a phone keyboard produces, so it is
+     the case that actually happens. */
+  const parts = highlight('at the café now', 'cafe');
+  assert.deepEqual(
+    parts.filter((p) => p.hit).map((p) => p.text),
+    ['café'],
+    'the original accent survives being highlighted',
+  );
+  assert.equal(parts.map((p) => p.text).join(''), 'at the café now');
+});
+
+test('highlight refuses rather than mis-slicing when folding changes length', () => {
+  /* The same word typed as e + a combining acute is one character LONGER than
+     its folded form, so offsets taken from the folded string would cut the
+     original in the wrong place and mangle the message to draw a mark on it.
+     Better to show it plain: searchMessages still finds it, the highlight just
+     declines to guess. */
+  const decomposed = 'at the café now'; // e + combining acute, not é
+  const parts = highlight(decomposed, 'cafe');
+
+  assert.equal(parts.length, 1, 'one unsplit piece — the guard fired');
+  assert.equal(parts[0].hit, false);
+  assert.equal(parts[0].text, decomposed, 'and not a character was moved');
+
+  /* The search itself is unaffected: it compares folded to folded and never
+     indexes back into the original. */
+  assert.equal(searchMessages([said(1, decomposed)], 'cafe').length, 1);
+});
+
+test('a query that matches nothing leaves the text in one piece', () => {
+  assert.deepEqual(highlight('hello', 'zzz'), [{ text: 'hello', hit: false }]);
+  assert.deepEqual(highlight('hello', ''), [{ text: 'hello', hit: false }]);
+});
+
+test('folding collapses runs of whitespace', () => {
+  assert.equal(foldForSearch('  two   words  '), 'two words');
+});

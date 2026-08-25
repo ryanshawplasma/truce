@@ -33,6 +33,7 @@ import {
   normaliseSide,
   readDeleteState,
   setDeleteAsk,
+  editMessage,
   softDeleteMessage,
   toggleReaction,
   verifyPassword,
@@ -600,6 +601,36 @@ export async function react(messageId, emoji) {
   if (result.error) return { ok: false, error: result.error };
 
   return { ok: true, id, reactions: result.reactions };
+}
+
+const EDIT_SETUP = 'Editing needs one more line of setup on this site. The message itself is fine.';
+
+/**
+ * Change the words of one of your own messages.
+ *
+ * The same tidy-and-truncate the composer uses, so an edit cannot smuggle in a
+ * longer message than a fresh one could, and cannot cut an emoji in half doing
+ * it. Authorship comes from the cookie; the caller only chooses which id.
+ */
+export async function editText(messageId, body) {
+  if (!isSupabaseConfigured()) return { ok: false, error: NO_DB };
+
+  const session = await currentSession();
+  if (!session) return { ok: false, error: 'You are signed out — open your corner again.', signedOut: true };
+
+  const id = Number(messageId);
+  if (!Number.isInteger(id) || id <= 0) return { ok: false, error: 'That message is not here any more.' };
+
+  const text = tidyAndTruncate(String(body == null ? '' : body), MAX_MESSAGE_LENGTH);
+  /* Emptying a message is unsending it, and unsend is the action that knows how
+     to do that properly — tombstone and all. */
+  if (!text) return { ok: false, error: 'To take it back, use Unsend.' };
+
+  const result = await editMessage(session.roomId, id, session.side, text);
+  if (result.setup) return { ok: false, setup: true, error: EDIT_SETUP };
+  if (result.error) return { ok: false, error: result.error };
+
+  return { ok: true, id, message: result.message, unchanged: Boolean(result.unchanged) };
 }
 
 /**
