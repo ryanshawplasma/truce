@@ -4,7 +4,7 @@ import LockedCard from '@/app/components/LockedCard';
 import LocalCard from './LocalCard';
 import { getCardById, getReactionsByCardId } from '@/lib/cards';
 import { metadataBase, siteOrigin } from '@/lib/site';
-import { SAMPLE_CARD, isSealed } from '@/lib/constants';
+import { isSealed, sampleCard } from '@/lib/constants';
 import { getOccasion, fill } from '@/lib/occasions';
 
 /**
@@ -71,7 +71,7 @@ export async function generateMetadata({ params }) {
     return build('Someone left you a letter 💌', 'Tap to open the envelope sealed for you 🤍');
   }
 
-  const card = id === 'demo' ? SAMPLE_CARD : await getCardById(id);
+  const card = id === 'demo' ? sampleCard() : await getCardById(id);
   if (!card) {
     return build('Someone left you a letter 💌', 'Tap to open the envelope sealed for you 🤍');
   }
@@ -103,7 +103,7 @@ export default async function CardPage({ params }) {
      never sees — so hand off to a small client component. */
   if (id === 'local') return <LocalCard />;
 
-  const card = id === 'demo' ? SAMPLE_CARD : await getCardById(id);
+  const card = id === 'demo' ? sampleCard() : await getCardById(id);
   if (!card) notFound();
 
   /* ---- Time capsule -----------------------------------------------------

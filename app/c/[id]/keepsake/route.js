@@ -2,7 +2,7 @@ import { ImageResponse } from 'next/og';
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { getCardById } from '@/lib/cards';
-import { SAMPLE_CARD, isSealed } from '@/lib/constants';
+import { isSealed, sampleCard } from '@/lib/constants';
 import { getOccasion } from '@/lib/occasions';
 import {
   KEEPSAKE_HEIGHT,
@@ -128,7 +128,7 @@ export async function GET(request, { params }) {
     return new Response('This card only exists in your own link.', { status: 404 });
   }
 
-  const card = id === 'demo' ? SAMPLE_CARD : await getCardById(id);
+  const card = id === 'demo' ? sampleCard() : await getCardById(id);
   if (!card) return new Response('No such card.', { status: 404 });
 
   /* A time capsule that has not opened yet keeps its secret here too. Without

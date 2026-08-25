@@ -1076,7 +1076,15 @@ html[data-appearance="blush"] .appearance__opt--sky{display:none}
   transform-style:flat;
   isolation:isolate;
   transition:transform .5s var(--ease);
-  animation:envBreathe 4.5s ease-in-out infinite;
+  /* Ten seconds a cycle, which is about six breaths a minute.
+
+     People entrain to a visible rhythm without deciding to — a slow one in
+     front of you pulls your own breathing towards it, and six a minute is the
+     paced-breathing rate associated with settling down rather than the
+     thirteen a minute the old 4.5s cycle was quietly asking for. An apology
+     wants the person reading it calm. This is the only part of the card that
+     can ask for that without saying anything. */
+  animation:envBreathe 10s ease-in-out infinite;
 }
 .env-wrap:hover{transform:translateY(-5px) scale(1.012)}
 @keyframes envBreathe{0%,100%{transform:translateY(0)}50%{transform:translateY(-7px)}}
@@ -1234,6 +1242,19 @@ html[data-appearance="blush"] .appearance__opt--sky{display:none}
   color:var(--t-paper-ink-soft);border-left:3px solid var(--t-accent);padding-left:15px;
   animation:riseIn .55s var(--ease) both .1s;
 }
+/* The line that says how long it waited.
+
+   Deliberately the quietest text on the letter. It is a fact somebody noticed,
+   not an announcement — set it any louder and it reads as the product talking
+   rather than as something true about the person who wrote to you. */
+.letter__waited{
+  margin:10px 0 0;
+  font-size:.78rem;line-height:1.5;
+  color:var(--t-ink-soft);
+  opacity:.85;
+}
+.letter__waited-since{opacity:.9}
+
 .letter__sign{
   margin-top:26px;text-align:right;font-family:var(--font-display);font-style:italic;
   font-size:1.12rem;color:var(--t-accent);animation:riseIn .55s var(--ease) both .2s;

@@ -12,6 +12,8 @@ import { CUTENESS_MAX, cardCutenessStart, cutenessTapStep, cutenessLabel } from 
 import ShareRow from './ShareRow';
 import KeepCard from './KeepCard';
 import PigeonDelivery from './PigeonDelivery';
+import { relativeTime } from '@/lib/format';
+import { shouldMentionWait } from '@/lib/waiting';
 import {
   burstFrom,
   burstGlyphs,
@@ -87,6 +89,15 @@ export default function CardExperience({ card, live = false, initialReactions = 
   }, [live, card.id]);
 
   const [opened, setOpened] = useState(false);
+  /*
+   * How long the letter waited, worked out after mount.
+   *
+   * It depends on the reader's clock, and the page is server-rendered — so
+   * computing it during render would put one answer in the HTML and a different
+   * one in the browser a moment later, which is a hydration mismatch and a
+   * visible flicker on a line that is supposed to feel quiet.
+   */
+  const [waited, setWaited] = useState(null);
   /* Scene 0 is still in the air. The envelope underneath is real and tappable
      the whole time — the delivery is decoration layered over a working page,
      never a gate in front of one — but the tap hint waits so nobody is invited
@@ -182,6 +193,14 @@ export default function CardExperience({ card, live = false, initialReactions = 
     },
     [],
   );
+
+  useEffect(() => {
+    if (!card.created_at) return;
+    setWaited({
+      ago: relativeTime(card.created_at),
+      long: shouldMentionWait(card.created_at, card.opened_at),
+    });
+  }, [card.created_at, card.opened_at]);
 
   /* ---------------------------------------------------- opening the envelope */
   const openEnvelope = useCallback(() => {
@@ -544,6 +563,15 @@ export default function CardExperience({ card, live = false, initialReactions = 
               {typedDone ? (
                 <p className="letter__sign">
                   — {card.from_name}, {occasion.signOff}
+                </p>
+              ) : null}
+
+              {/* A link has no author in it. This is the cheapest way to put
+                  one back: a fact about them, never about the reader. */}
+              {typedDone && waited && waited.ago ? (
+                <p className="letter__waited">
+                  {card.from_name} wrote this {waited.ago}.
+                  {waited.long ? <span className="letter__waited-since"> It waited here for you.</span> : null}
                 </p>
               ) : null}
 
