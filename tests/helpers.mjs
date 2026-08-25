@@ -16,6 +16,49 @@ export const MISSING_COLUMN = {
 };
 
 /**
+ * The same refusal, about a named column.
+ *
+ * Which column 42703 names is not decoration: lib/couple.js reads the name to
+ * decide WHICH group of features to switch off, so a test that always says
+ * "media_path" cannot tell a working dispatcher from one that guesses.
+ */
+export function missingColumn(name) {
+  return {
+    code: '42703',
+    message: `column couple_messages.${name} does not exist`,
+    details: null,
+    hint: null,
+  };
+}
+
+/** The columns added after the first release, newest group last. */
+export const LATER_COLUMNS = ['reply_to', 'reactions', 'deleted_at', 'media_ms'];
+
+/**
+ * A database that has some columns and not others.
+ *
+ * `respond` is handed the query with the missing ones already accounted for:
+ * a select naming an absent column fails the way PostgREST fails, and so does
+ * an insert that tries to write one.
+ */
+export function withoutColumns(missing, onQuery) {
+  const absent = (text) => missing.find((c) => String(text).includes(c));
+
+  return (q) => {
+    const badSelect = q.select ? absent(q.select) : null;
+    if (badSelect) return { data: null, error: missingColumn(badSelect) };
+
+    const written = q.insert || q.update;
+    if (written) {
+      const badWrite = absent(Object.keys(written).join(','));
+      if (badWrite) return { data: null, error: missingColumn(badWrite) };
+    }
+
+    return onQuery(q);
+  };
+}
+
+/**
  * @param {object} opts
  * @param {(q: object) => object} opts.respond  given the recorded query, return { data, error }
  */
@@ -55,6 +98,10 @@ export function fakeSupabase({ respond, storage } = {}) {
         },
         not(col, op, val) {
           q.filters.push(['not', col, op, val]);
+          return api;
+        },
+        like(col, pattern) {
+          q.filters.push(['like', col, pattern]);
           return api;
         },
         order() {
