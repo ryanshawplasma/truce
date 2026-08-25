@@ -308,3 +308,77 @@ test('a query that matches nothing leaves the text in one piece', () => {
 test('folding collapses runs of whitespace', () => {
   assert.equal(foldForSearch('  two   words  '), 'two words');
 });
+
+/* -- the unread line -------------------------------------------------------
+   WhatsApp's "unread messages" divider: drawn once, where you left off, and
+   only for things the other person said. */
+
+const { firstUnreadId } = await import('../lib/chat.js');
+
+const from = (id, author, body = 'x') => ({ id, author, body, created_at: local(2026, 3, 4, 10, id) });
+
+test('the line sits above the first thing they said that you have not seen', () => {
+  const rows = [from(1, 1), from(2, 2), from(3, 2)];
+  assert.equal(firstUnreadId(rows, 1, 1), 2);
+});
+
+test('your own messages are never unread', () => {
+  /* You were there. And sending from a laptop must not draw a line on a phone. */
+  const rows = [from(1, 2), from(2, 1), from(3, 1)];
+  assert.equal(firstUnreadId(rows, 1, 1), null);
+});
+
+test('nothing newer than what you read means no line at all', () => {
+  const rows = [from(1, 2), from(2, 2)];
+  assert.equal(firstUnreadId(rows, 2, 1), null);
+});
+
+test('a device that has never read anything starts from the beginning', () => {
+  const rows = [from(1, 2), from(2, 2)];
+  assert.equal(firstUnreadId(rows, 0, 1), 1);
+});
+
+test('an unusable last-read draws no line rather than guessing', () => {
+  const rows = [from(1, 2)];
+  for (const bad of [null, undefined, NaN, 'later', {}]) {
+    assert.equal(firstUnreadId(rows, bad, 1), null);
+  }
+});
+
+test('pending messages have no server id, so they cannot be the line', () => {
+  /* An optimistic row's id is a negative timestamp. */
+  const rows = [{ id: -17209, author: 2, body: 'in flight', created_at: local(2026, 3, 4, 10, 1) }, from(9, 2)];
+  assert.equal(firstUnreadId(rows, 0, 1), 9);
+});
+
+test('buildRows draws the line once, below the date heading', () => {
+  const rows = buildRows([from(1, 1), from(2, 2), from(3, 2)], new Date(2026, 2, 4, 12, 0), { unreadFrom: 2 });
+  const kinds = rows.map((r) => r.kind);
+
+  assert.deepEqual(kinds, ['date', 'message', 'unread', 'message', 'message']);
+  /* Never between a heading and the day it introduces. */
+  assert.notEqual(kinds.indexOf('unread'), kinds.indexOf('date') + 1);
+});
+
+test('buildRows without an unread id is exactly as it was', () => {
+  const messages = [from(1, 1), from(2, 2)];
+  const plain = buildRows(messages, new Date(2026, 2, 4, 12, 0));
+  const explicit = buildRows(messages, new Date(2026, 2, 4, 12, 0), { unreadFrom: null });
+  assert.deepEqual(plain, explicit);
+  assert.equal(plain.some((r) => r.kind === 'unread'), false);
+});
+
+test('an unread id that is not in the list draws no line', () => {
+  const rows = buildRows([from(1, 1)], new Date(2026, 2, 4, 12, 0), { unreadFrom: 999 });
+  assert.equal(rows.some((r) => r.kind === 'unread'), false);
+});
+
+test('the line is drawn once even if the id appears twice', () => {
+  /* buildRows takes whatever array it is handed. A list mid-merge — an
+     optimistic row and its confirmed twin, say — must not grow two dividers
+     saying the same thing. */
+  const dupe = [from(1, 1), from(2, 2), { ...from(2, 2), body: 'again' }];
+  const rows = buildRows(dupe, new Date(2026, 2, 4, 12, 0), { unreadFrom: 2 });
+
+  assert.equal(rows.filter((r) => r.kind === 'unread').length, 1);
+});

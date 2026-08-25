@@ -20,6 +20,7 @@ import { daysBetween } from '@/lib/format';
 import {
   REACTIONS,
   buildRows,
+  firstUnreadId,
   clockTime,
   highlight,
   normaliseReactions,
@@ -163,6 +164,47 @@ export default function CoupleRoom({ room, side, initialMessages = [] }) {
     setEditing(null);
     setDraft('');
   }, []);
+
+  const onCopy = useCallback(async (text) => {
+    try {
+      await navigator.clipboard.writeText(String(text || ''));
+      setNote('Copied 🤍');
+    } catch {
+      /* Denied, or an insecure page — the clipboard API is HTTPS-only. Saying
+         nothing would look like the button did nothing. */
+      setNote('This browser would not let us copy that.');
+    }
+  }, []);
+
+  /* ------------------------------------------------------------- the draft */
+
+  /* Kept per room, the way every chat app keeps one: a half-written message is
+     often the hardest one to write, and losing it to a locked screen is worse
+     than losing a sent one. Not persisted while editing — that text belongs to
+     a message that already exists, and restoring it into an empty composer
+     later would look like a draft they never wrote. */
+  const draftKeyRef = useRef(`truce.corner.draft.${room.id}`);
+  const draftLoaded = useRef(false);
+
+  useEffect(() => {
+    try {
+      const saved = window.localStorage.getItem(draftKeyRef.current);
+      if (saved) setDraft(saved);
+    } catch {
+      /* Storage blocked. The composer simply starts empty. */
+    }
+    draftLoaded.current = true;
+  }, []);
+
+  useEffect(() => {
+    if (!draftLoaded.current || editing) return;
+    try {
+      if (draft) window.localStorage.setItem(draftKeyRef.current, draft);
+      else window.localStorage.removeItem(draftKeyRef.current);
+    } catch {
+      /* As above. */
+    }
+  }, [draft, editing]);
 
   /* Quotes are resolved from what this browser already holds rather than
      fetched: the reply and the message it answers are almost always both on
@@ -579,10 +621,13 @@ export default function CoupleRoom({ room, side, initialMessages = [] }) {
     if (atBottomRef.current || mineJustLanded) {
       stickToBottom(true);
       setUnread(0);
+      /* Arriving while already at the bottom counts as read too; the scroll
+         handler never fires for a message that did not move the view. */
+      markRead(highestIdRef.current);
     } else {
       setUnread((n) => n + 1);
     }
-  }, [messages, view, side, stickToBottom]);
+  }, [messages, view, side, stickToBottom, markRead]);
 
   /* One cheap read per scroll frame: are we at the bottom or not? */
   const onListScroll = useCallback(() => {
@@ -592,8 +637,13 @@ export default function CoupleRoom({ room, side, initialMessages = [] }) {
     const bottom = distance < 90;
     atBottomRef.current = bottom;
     setAwayFromBottom(!bottom);
-    if (bottom) setUnread(0);
-  }, []);
+    if (bottom) {
+      setUnread(0);
+      /* Reaching the bottom is what “I have read this” means in a room this
+         small — there is no other place the newest message could be. */
+      markRead(highestIdRef.current);
+    }
+  }, [markRead]);
 
   const jumpToLatest = useCallback(() => {
     atBottomRef.current = true;
@@ -924,7 +974,40 @@ export default function CoupleRoom({ room, side, initialMessages = [] }) {
     router.push('/couple');
   };
 
-  const rows = useMemo(() => buildRows(messages), [messages]);
+  /* ----------------------------------------------------------- unread line */
+
+  /* Frozen at mount and left alone. If it followed the last-read marker it
+     would vanish the instant the room scrolled to the bottom — which is the
+     first thing the room does — so the line would never survive long enough to
+     be read. It stays until the corner is opened again. */
+  const [unreadFrom, setUnreadFrom] = useState(null);
+  const readKeyRef = useRef(`truce.corner.read.${room.id}`);
+
+  useEffect(() => {
+    let stored = null;
+    try {
+      stored = window.localStorage.getItem(readKeyRef.current);
+    } catch {
+      /* Storage blocked — no line, which is the quiet failure, not the loud one. */
+    }
+    setUnreadFrom(firstUnreadId(messages, stored, side));
+    /* Mount only: this is a snapshot of where they left off, not a live view. */
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  /* Marking read is cheap and idempotent, so it rides the same moments the room
+     already knows about rather than earning its own listener. */
+  const markRead = useCallback((id) => {
+    if (typeof id !== 'number' || id <= 0) return;
+    try {
+      const seen = Number(window.localStorage.getItem(readKeyRef.current)) || 0;
+      if (id > seen) window.localStorage.setItem(readKeyRef.current, String(id));
+    } catch {
+      /* As above. A corner that cannot remember is still a working corner. */
+    }
+  }, []);
+
+  const rows = useMemo(() => buildRows(messages, new Date(), { unreadFrom }), [messages, unreadFrom]);
 
   return (
     <div className="corner">
@@ -1058,6 +1141,10 @@ export default function CoupleRoom({ room, side, initialMessages = [] }) {
                 <p className="corner__date" key={`d-${row.key}`}>
                   {row.label}
                 </p>
+              ) : row.kind === 'unread' ? (
+                <p className="corner__unread" key={row.key}>
+                  <span>Unread messages</span>
+                </p>
               ) : (
                 <Bubble
                   key={row.message.id}
@@ -1072,6 +1159,8 @@ export default function CoupleRoom({ room, side, initialMessages = [] }) {
                   onUnsend={onUnsend}
                   onReply={onReply}
                   onEdit={onEdit}
+                  onCopy={onCopy}
+                  onJump={jumpTo}
                   flash={flash === row.message.id}
                   parent={row.message.reply_to ? byId.get(row.message.reply_to) : null}
                   side={side}
@@ -1391,6 +1480,8 @@ function Bubble({
   onUnsend,
   onReply,
   onEdit,
+  onCopy,
+  onJump,
   flash,
   parent,
   side,
@@ -1406,6 +1497,53 @@ function Bubble({
   /* A message still in the air has no id the server would recognise, so there
      is nothing yet to react to or unsend. */
   const actionable = !gone && !message.pending && typeof message.id === 'number';
+  /* Swipe-to-reply, the gesture this whole interaction is named after
+     everywhere else. Horizontal intent only: the list scrolls vertically, so a
+     drag that is mostly up or down must be left alone or the room becomes
+     impossible to scroll with a thumb. */
+  const dragRef = useRef(null);
+  const [dragX, setDragX] = useState(0);
+
+  const SWIPE_ARM = 12;   // px before we decide the gesture is horizontal
+  const SWIPE_FIRE = 56;  // px before letting go counts as a reply
+
+  const onTouchStart = (e) => {
+    if (!actionable || !onReply) return;
+    const t = e.touches[0];
+    dragRef.current = { x: t.clientX, y: t.clientY, armed: false };
+  };
+
+  const onTouchMove = (e) => {
+    const start = dragRef.current;
+    if (!start) return;
+
+    const t = e.touches[0];
+    const dx = t.clientX - start.x;
+    const dy = t.clientY - start.y;
+
+    if (!start.armed) {
+      if (Math.abs(dy) > Math.abs(dx)) {
+        /* They are scrolling. Give up on this gesture entirely rather than
+           fighting the list for it. */
+        dragRef.current = null;
+        return;
+      }
+      if (Math.abs(dx) < SWIPE_ARM) return;
+      start.armed = true;
+    }
+
+    /* Rightwards only, and with a ceiling — this is a nudge, not a drawer. */
+    setDragX(Math.max(0, Math.min(dx, SWIPE_FIRE + 12)));
+  };
+
+  const onTouchEnd = () => {
+    const start = dragRef.current;
+    dragRef.current = null;
+    const travelled = dragX;
+    setDragX(0);
+    if (start && start.armed && travelled >= SWIPE_FIRE && onReply) onReply(message);
+  };
+
   const className = [
     'bubble',
     mine ? 'bubble--mine' : '',
@@ -1420,20 +1558,44 @@ function Bubble({
     .join(' ');
 
   return (
-    <div className={className} data-mid={message.id}>
-      {message.reply_to && !gone ? (
-        <span className="quote">
-          <span className="quote__bar" aria-hidden="true" />
-          <span className="quote__text">
-            {parent ? (
-              quotedText(parent)
-            ) : (
-              /* Either it scrolled out of the window we hold, or it was
-                 unsent. Saying so beats an empty box. */
-              <em className="quote__missing">Message unavailable</em>
-            )}
-          </span>
+    <div
+      className={className}
+      data-mid={message.id}
+      onTouchStart={onTouchStart}
+      onTouchMove={onTouchMove}
+      onTouchEnd={onTouchEnd}
+      onTouchCancel={onTouchEnd}
+      style={dragX ? { transform: `translateX(${dragX}px)` } : undefined}
+    >
+      {dragX > 0 ? (
+        <span className="bubble__swipe" aria-hidden="true" style={{ opacity: Math.min(1, dragX / 56) }}>
+          ↩
         </span>
+      ) : null}
+      {message.reply_to && !gone ? (
+        parent && onJump ? (
+          /* Tapping a quote goes to what it answers — the thing every chat app
+             has trained a thumb to expect. Only when there is something to go
+             to: a quote for a message we no longer hold is not a button. */
+          <button
+            type="button"
+            className="quote quote--go"
+            onClick={() => onJump(parent.id)}
+            aria-label="Go to the message this replies to"
+          >
+            <span className="quote__bar" aria-hidden="true" />
+            <span className="quote__text">{quotedText(parent)}</span>
+          </button>
+        ) : (
+          <span className="quote">
+            <span className="quote__bar" aria-hidden="true" />
+            <span className="quote__text">
+              {/* Either it scrolled out of the window we hold, or it was
+                  unsent. Saying so beats an empty box. */}
+              <em className="quote__missing">Message unavailable</em>
+            </span>
+          </span>
+        )
       ) : null}
 
       {isVoice ? <VoiceNote message={message} mine={mine} /> : null}
@@ -1514,6 +1676,21 @@ function Bubble({
               >
                 Reply
               </button>
+
+              {/* Words only — there is nothing useful to put on a clipboard
+                  for a photo whose URL expires within the hour. */}
+              {!isPhoto && !isVoice && message.body ? (
+                <button
+                  type="button"
+                  className="bubble__reply"
+                  onClick={() => {
+                    setMenuOpen(false);
+                    if (onCopy) onCopy(message.body);
+                  }}
+                >
+                  Copy
+                </button>
+              ) : null}
 
               {/* Words only. A caption edit that could also swap the photo is
                   a different feature with different consequences. */}

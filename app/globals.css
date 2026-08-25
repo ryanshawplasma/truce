@@ -2564,6 +2564,41 @@ html[data-appearance="blush"] .appearance__opt--sky{display:none}
 }
 .bubble__reply:hover{background:var(--accent-soft)}
 
+/* ---------- The unread line ----------------------------------------------
+   Drawn once, where they left off, and left alone until the corner is opened
+   again — a line that vanished as soon as the room scrolled would never be
+   read, which is the only thing it is for. */
+.corner__unread{
+  display:flex;align-items:center;gap:10px;
+  margin:10px 0 4px;
+  font-size:.68rem;font-weight:800;letter-spacing:.06em;text-transform:uppercase;
+  color:var(--accent-ink,var(--ink-mid));
+}
+.corner__unread::before,
+.corner__unread::after{content:"";flex:1 1 auto;height:1px;background:var(--accent-line)}
+.corner__unread span{flex:0 0 auto}
+
+/* ---------- Swipe to reply -----------------------------------------------
+   The bubble follows the thumb a little and springs back. The arrow appears
+   only once the gesture has been read as horizontal, so it never flickers
+   during an ordinary scroll. */
+.bubble{transition:transform .16s ease-out}
+.bubble__swipe{
+  position:absolute;left:-30px;top:50%;transform:translateY(-50%);
+  font-size:15px;color:var(--ink-soft);pointer-events:none;
+}
+
+/* A quote you can go to. Same box, but it says so. */
+.quote--go{
+  width:100%;border:0;font:inherit;text-align:left;cursor:pointer;
+  -webkit-appearance:none;appearance:none;
+}
+.quote--go:hover .quote__text{color:var(--ink)}
+
+@media (prefers-reduced-motion:reduce){
+  .bubble{transition:none}
+}
+
 /* ---------- Search -------------------------------------------------------
    Over the window the room already holds, which is why the scope line at the
    bottom exists: "nothing matches" is a smaller claim than "it was never
