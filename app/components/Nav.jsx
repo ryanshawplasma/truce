@@ -63,6 +63,15 @@ export default function Nav() {
           )}
         </nav>
 
+        {/* The corner, kept at the top of every page.
+            On desktop it is already in nav__links — but that list is
+            display:none below 900px, which left a phone with no way into a
+            corner except scrolling to the door in the middle of the page. */}
+        <Link className="nav__corner-pill" href="/couple" aria-label="Our corner">
+          <span aria-hidden="true">💙</span>
+          <span className="nav__corner-pill-text">Our corner</span>
+        </Link>
+
         <AppearanceToggle variant="pill" />
 
         <CtaButton className="btn btn--primary btn--sm nav__cta">Make your card</CtaButton>

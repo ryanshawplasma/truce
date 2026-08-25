@@ -2687,6 +2687,25 @@ html[data-appearance="blush"] .appearance__opt--sky{display:none}
 .nav__corner:hover{background:var(--accent-soft) !important;border-color:var(--accent-line)}
 .nav__drawer .nav__corner{justify-content:flex-start}
 
+/* The always-there corner pill.
+   .nav__links is display:none below 900px, so on a phone the only way into a
+   corner used to be the door halfway down the landing page. This keeps it at
+   the top of every screen instead. Hidden at 900px and up, where the full nav
+   already carries the link. */
+.nav__corner-pill{
+  display:inline-flex;align-items:center;gap:6px;
+  margin-left:auto;
+  min-height:38px;padding:9px 13px;
+  border:1px solid var(--accent-line);border-radius:999px;
+  background:var(--accent-chip);color:var(--ink);
+  font-weight:800;font-size:13px;line-height:1;
+  white-space:nowrap;text-decoration:none;
+}
+.nav__corner-pill:hover{background:var(--accent-soft)}
+@media (min-width:900px){.nav__corner-pill{display:none}}
+/* Only the genuinely tiny (under ~340px) lose the words; 375 and 390 are the
+@media (max-width:340px){.nav__corner-pill-text{display:none}.nav__corner-pill{padding:9px 11px}}
+
 /* -- Closing a corner -------------------------------------------------------
    Deliberately undramatic. The panel is not red, the link at the bottom of the
    room is not a button, and the only thing wearing the danger colour is the

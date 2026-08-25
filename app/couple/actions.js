@@ -2,7 +2,7 @@
 
 import { redirect } from 'next/navigation';
 import { isSupabaseConfigured } from '@/lib/supabase';
-import { currentSession, endSession, startSession } from '@/lib/couple-session';
+import { currentSession, endSession, startSession, touchSession } from '@/lib/couple-session';
 import { backoffMs, clientKey, sleep, strikeLimit, takeLimit } from '@/lib/throttle';
 import { tidyAndTruncate } from '@/lib/truncate';
 import {
@@ -360,6 +360,10 @@ export async function getMessages(sinceId = 0) {
 
   const session = await currentSession();
   if (!session) return { ok: false, messages: [], signedOut: true };
+
+  /* Having the corner open is what keeps it open: the poll that fetches new
+     messages is also what rolls the 30 days forward. */
+  await touchSession();
 
   const since = Number.isFinite(Number(sinceId)) ? Math.max(0, Number(sinceId)) : 0;
   const messages = await listMessages(session.roomId, since);

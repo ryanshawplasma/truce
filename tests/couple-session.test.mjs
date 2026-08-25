@@ -6,6 +6,7 @@ import assert from 'node:assert/strict';
 const {
   createSessionToken,
   readSessionToken,
+  shouldRenewSession,
   normaliseAnniversary,
   normalisePassword,
   normaliseRoomName,
@@ -21,7 +22,11 @@ const {
 
 test('a fresh token round-trips', () => {
   const token = createSessionToken('room00000001', 2);
-  assert.deepEqual(readSessionToken(token), { roomId: 'room00000001', side: 2 });
+  const read = readSessionToken(token);
+  assert.equal(read.roomId, 'room00000001');
+  assert.equal(read.side, 2);
+  /* The expiry rides along so the session can be rolled forward. */
+  assert.ok(read.expires > Date.now());
 });
 
 test('a tampered payload is refused', () => {
@@ -105,4 +110,31 @@ test('two hashes of the same password differ — the salt is doing its job', asy
   const b = await hashPassword('same password');
   assert.notEqual(a.hash, b.hash);
   assert.notEqual(a.salt, b.salt);
+});
+
+/* -- rolling the session forward ------------------------------------------
+   A corner used every day used to expire on day 30 and ask for the password
+   again — the one moment somebody has forgotten it. */
+
+const DAY = 24 * 60 * 60 * 1000;
+const FULL = 30 * DAY;
+
+test('a session fresh out of the oven is not renewed', () => {
+  assert.equal(shouldRenewSession(Date.now() + FULL), false);
+});
+
+test('a day of use is enough to earn a new 30 days', () => {
+  assert.equal(shouldRenewSession(Date.now() + FULL - DAY - 1000), true);
+});
+
+test('an expired session is never resurrected', () => {
+  /* Waiting somebody out is a way of signing out. A late poll must not undo it. */
+  assert.equal(shouldRenewSession(Date.now() - 1000), false);
+  assert.equal(shouldRenewSession(Date.now() - FULL), false);
+});
+
+test('junk expiry is refused rather than thrown at', () => {
+  for (const bad of [undefined, null, NaN, Infinity, 'soon', {}]) {
+    assert.equal(shouldRenewSession(bad), false);
+  }
 });
