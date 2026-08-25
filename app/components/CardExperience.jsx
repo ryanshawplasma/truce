@@ -10,6 +10,7 @@ import { getOccasion, envelopeSubtitle, envelopeTitle, promiseText, fill } from 
 import { findMyCard } from '@/lib/mycards';
 import { CUTENESS_MAX, cardCutenessStart, cutenessTapStep, cutenessLabel } from '@/lib/cuteness';
 import ShareRow from './ShareRow';
+import KeepCard from './KeepCard';
 import {
   burstFrom,
   burstGlyphs,
@@ -633,6 +634,10 @@ export default function CardExperience({ card, live = false, initialReactions = 
       {payoff ? (
         <PayoffOverlay key={payoff.key} text={payoff.text} reduced={payoff.reduced} stickers={stickers} />
       ) : null}
+
+      {/* Theirs to keep, once it is open. A link is a promise about a server
+          staying up; a picture in a camera roll is not. */}
+      <KeepCard card={card} className="cardapp__keep" />
 
       <div className="cardapp__foot">
         <Link href="/">Made with Truce 🤍 Make your own</Link>

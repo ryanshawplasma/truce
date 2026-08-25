@@ -1277,6 +1277,14 @@ html[data-appearance="blush"] .appearance__opt--sky{display:none}
 }
 .btn-hug:hover{transform:translateY(-3px) scale(1.03);background:var(--t-accent);color:#fff}
 
+/* ---------- Keep this card ------------------------------------------------
+   A link is a promise about a server staying up. A picture in a camera roll
+   is not, which is the whole point of the button. */
+.cardapp__keep{margin:26px auto 0;max-width:min(92vw,440px)}
+.keep{display:flex;flex-direction:column;align-items:center;gap:7px;text-align:center}
+.keep__btn{display:inline-flex;align-items:center;gap:9px;min-height:44px}
+.keep__note{margin:0;font-size:.76rem;color:var(--t-ink-soft,var(--ink-soft));max-width:34ch;line-height:1.4}
+
 .cardapp__foot{
   padding:26px var(--pad) 34px;text-align:center;font-size:.86rem;
   color:var(--t-ink-soft);
