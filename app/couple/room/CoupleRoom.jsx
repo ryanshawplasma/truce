@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import {
@@ -241,7 +241,39 @@ export default function CoupleRoom({ room, side, initialMessages = [] }) {
     }
   }, []);
 
-  useEffect(() => releaseMic, [releaseMic]);
+  /* Alive only while mounted. onstop fires asynchronously and there is no way
+     to un-fire it, so the handler has to be able to ask. */
+  const micAliveRef = useRef(true);
+
+  useEffect(() => {
+    micAliveRef.current = true;
+    return () => {
+      micAliveRef.current = false;
+
+      /*
+       * Leaving the room mid-recording must not send the recording.
+       *
+       * Releasing the microphone stops the tracks, which ends the recorder,
+       * which fires onstop — and that handler used to carry straight on and
+       * upload. Closing the room while holding a voice note therefore posted
+       * it into a room the person had already left, setting state on a
+       * component that no longer existed on the way past. Mark it discarded
+       * and stop the recorder deliberately, rather than letting it be stopped
+       * as a side effect of the microphone going away.
+       */
+      discardRef.current = true;
+      const recorder = recorderRef.current;
+      if (recorder && recorder.state !== 'inactive') {
+        try {
+          recorder.stop();
+        } catch {
+          /* Already gone. The tracks below are what actually matter. */
+        }
+      }
+
+      releaseMic();
+    };
+  }, [releaseMic]);
 
   const uploadVoice = useCallback(
     async (blob, heldMs, ext) => {
@@ -362,6 +394,11 @@ export default function CoupleRoom({ room, side, initialMessages = [] }) {
       const chunks = chunksRef.current;
       chunksRef.current = [];
       releaseMic();
+
+      /* The room has gone. Nothing below is safe, and the recording is not
+         wanted — see the unmount cleanup for why this fires at all. */
+      if (!micAliveRef.current) return;
+
       setRecording(false);
       setRecordMs(0);
 
@@ -983,7 +1020,11 @@ export default function CoupleRoom({ room, side, initialMessages = [] }) {
   const [unreadFrom, setUnreadFrom] = useState(null);
   const readKeyRef = useRef(`truce.corner.read.${room.id}`);
 
-  useEffect(() => {
+  /* Layout effect, not an effect: scrolling the list to the bottom on mount
+     dispatches a scroll event, and that handler calls markRead — which would
+     overwrite the very marker this is trying to read. Running before paint puts
+     the read first by construction rather than by luck of ordering. */
+  useLayoutEffect(() => {
     let stored = null;
     try {
       stored = window.localStorage.getItem(readKeyRef.current);
@@ -1420,6 +1461,24 @@ function VoiceNote({ message, mine }) {
     }
   };
 
+  /*
+   * A voice note whose signed URL did not come back.
+   *
+   * attachMediaUrls returns media_url: null when Storage refuses to sign, and
+   * the honest thing to do with that is say so. Falling through rendered an
+   * <audio src="">, which gives a play button that does nothing at all when
+   * pressed — the worst of the three options, because it looks like the
+   * recording is fine and the person is doing it wrong. The Photo beside it has
+   * always said "broken"; this now matches.
+   */
+  if (!src && !message.pending) {
+    return (
+      <span className="voice voice--waiting">
+        <span className="voice__time">Could not load that recording</span>
+      </span>
+    );
+  }
+
   if (message.pending && !src) {
     return (
       <span className="voice voice--waiting">
@@ -1533,13 +1592,20 @@ function Bubble({
     }
 
     /* Rightwards only, and with a ceiling — this is a nudge, not a drawer. */
-    setDragX(Math.max(0, Math.min(dx, SWIPE_FIRE + 12)));
+    const travel = Math.max(0, Math.min(dx, SWIPE_FIRE + 12));
+    /* Recorded on the gesture itself as well as in state. touchend reads it to
+       decide whether the swipe counted, and reading it from state means
+       trusting that the last setDragX of the drag has been rendered before the
+       finger left the glass — which is a race nobody should be relying on to
+       decide whether a reply happens. */
+    start.travel = travel;
+    setDragX(travel);
   };
 
   const onTouchEnd = () => {
     const start = dragRef.current;
     dragRef.current = null;
-    const travelled = dragX;
+    const travelled = start ? start.travel || 0 : 0;
     setDragX(0);
     if (start && start.armed && travelled >= SWIPE_FIRE && onReply) onReply(message);
   };

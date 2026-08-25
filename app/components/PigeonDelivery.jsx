@@ -51,6 +51,36 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react
  *     underneath it — the scene is decoration layered over a working page.
  */
 
+/**
+ * Is this device going to see the delivery at all?
+ *
+ * Asked in two places — the layout effect that locks the page and measures the
+ * landing, and the effect that starts the clock — and they have to agree. When
+ * only the second one knew, a returning visitor got the scroll lock and the
+ * card's entrance animation suppressed for one frame before the first effect
+ * found out there was nothing to play. That is a flicker on every visit after
+ * the first, in service of an animation that is not even going to run.
+ *
+ * ?replay=1 overrides the memory on purpose: a four-second moment you cannot
+ * rewatch is a strange thing to build.
+ */
+function willPlay(cardId) {
+  let replay = false;
+  try {
+    replay = new URLSearchParams(window.location.search).get('replay') === '1';
+  } catch {
+    /* No URLSearchParams is old enough that the animation is the lesser worry. */
+  }
+  if (replay) return true;
+
+  try {
+    return window.localStorage.getItem(`truce.delivered.${cardId}`) !== '1';
+  } catch {
+    /* Unreadable storage counts as never seen — the animation is the point. */
+    return true;
+  }
+}
+
 /* Total run, kept in one place because the CSS and the timeout have to agree.
    If they drift, the scene either cuts off mid-flight or hangs after landing. */
 const RUN_MS = 5200;
@@ -180,6 +210,9 @@ export default function PigeonDelivery({ cardId, onDone, fromName }) {
   }, [cardId, onDone]);
 
   useLayoutEffect(() => {
+    /* Nothing to lock and nothing to measure if it is not going to play. */
+    if (!willPlay(cardId)) return undefined;
+
     /* Lock first, measure second. The lock also stops the envelope's two idle
        animations dead at their base pose, so the rect is the resting one. */
     try {
@@ -223,8 +256,17 @@ export default function PigeonDelivery({ cardId, onDone, fromName }) {
     return () => {
       alive = false;
       window.removeEventListener('resize', measure);
+
+      /* Whatever happens to this component, the page must not be left locked.
+         finish() normally takes the class off, but nothing guarantees finish()
+         runs — the card can decide to show the letter and unmount the scene
+         underneath it, and a page stuck at overflow:hidden with the sky gone is
+         a card nobody can scroll. */
+      try {
+        document.documentElement.classList.remove('pig-locked');
+      } catch {}
     };
-  }, []);
+  }, [cardId]);
   useEffect(() => {
     /* Once is once.
 
@@ -237,22 +279,7 @@ export default function PigeonDelivery({ cardId, onDone, fromName }) {
        reported. */
     if (doneRef.current) return undefined;
 
-    /* ?replay=1 plays it again on purpose. It exists because somebody will
-       want to show this to the person who sent it, and because a four-second
-       moment you cannot rewatch is a strange thing to build. */
-    let replay = false;
-    try {
-      replay = new URLSearchParams(window.location.search).get('replay') === '1';
-    } catch {
-      /* No URLSearchParams is old enough that the animation is the lesser worry. */
-    }
-
-    let seen = false;
-    try {
-      seen = !replay && window.localStorage.getItem(`truce.delivered.${cardId}`) === '1';
-    } catch {
-      /* Treat unreadable storage as "never seen" — the animation is the point. */
-    }
+    const play = willPlay(cardId);
 
     /* Frequently a vestibular condition rather than a preference. An arcing,
        tumbling, squashing thing is exactly what it is set to prevent. */
@@ -263,7 +290,7 @@ export default function PigeonDelivery({ cardId, onDone, fromName }) {
       /* Old browser, no matchMedia. Play it. */
     }
 
-    if (seen) {
+    if (!play) {
       try {
         document.documentElement.classList.remove('pig-locked');
       } catch {}
