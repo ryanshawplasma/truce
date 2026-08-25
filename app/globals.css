@@ -3876,3 +3876,353 @@ html[data-appearance="blush"] .appearance__opt--sky{display:none}
   .gallery-tile{animation:none !important}
   .photo:hover .photo__img,.gallery-tile:hover img{transform:none}
 }
+
+/* ==========================================================================
+   SCENE 0 — THE DELIVERY
+   --------------------------------------------------------------------------
+   A pigeon brings the letter in from the horizon and drops it onto the exact
+   pixels the envelope occupies, so the last frame of the fall and the first
+   frame of the thing you tap are the same object. See PigeonDelivery.jsx.
+
+   THE MATCH CUT, AND WHY IT IS MEASURED
+   -------------------------------------
+   The landing position is NOT in this file. It is measured from the real
+   envelope at runtime and written onto .pig__drop as left/top/width, and every
+   keyframe below ends at translate(0,0) scale(1) — meaning "exactly there".
+
+   The first version guessed with vh units. At one viewport it was close; at
+   every other one the dropped letter landed somewhere near, and what you
+   actually saw was two envelopes and a crossfade between them. Landing on a
+   measured rect is the difference between a match cut and a mistake.
+
+   Rules everything here obeys:
+     - nothing travels in a straight line; every path is an arc
+     - nothing starts or stops abruptly; every ease is hand-picked
+     - the landing squashes, puffs, bounces once, and is followed a beat later
+       by a feather, because weight is sold by what happens AFTER the impact
+     - only transform and opacity animate, so the scene stays on the compositor
+   ======================================================================== */
+
+.pig{
+  position:fixed;inset:0;z-index:60;
+  overflow:hidden;
+  cursor:pointer;
+  /* Starts only once the letter has landed AND settled. The first cut of this
+     began fading at 4s while the drop ran to 4.5s, so the landing — the whole
+     point — happened underneath a fade and was never seen. */
+  animation:pigOut .62s cubic-bezier(.4,0,.6,1) 4.62s both;
+}
+.pig--calm{animation:pigOut .45s ease-in .5s both}
+
+@keyframes pigOut{to{opacity:0;visibility:hidden}}
+
+/* -- the sky --------------------------------------------------------------
+   Dusk, and committed to it. The first pass was so pale it read as a loading
+   screen: a wash of near-white with a grey bird lost in it. This has an actual
+   horizon glow, an actual sun low down, and enough colour to be a time of day. */
+.pig__sky{
+  position:absolute;inset:0;
+  background:
+    radial-gradient(58% 34% at 50% 92%, rgba(255,214,168,.95) 0%, rgba(255,214,168,0) 70%),
+    radial-gradient(90% 60% at 50% 104%, #FFC59B 0%, rgba(255,197,155,0) 64%),
+    linear-gradient(180deg, #C9A7C8 0%, #E8B6BE 30%, #F8CBB8 58%, #FFE0C6 82%, #FFEFDD 100%);
+}
+
+/* The sun, sitting on the horizon. One soft disc — it does more for "evening"
+   than any amount of gradient tuning. */
+.pig__sun{
+  position:absolute;left:50%;bottom:-9vh;
+  width:min(46vw,300px);height:min(46vw,300px);
+  margin-left:calc(min(46vw,300px) / -2);
+  border-radius:50%;
+  background:radial-gradient(circle, rgba(255,246,224,.95) 0%, rgba(255,226,178,.6) 45%, rgba(255,214,168,0) 72%);
+}
+
+/* -- clouds, at two speeds ------------------------------------------------
+   Parallax is the cheapest depth there is, and depth is what makes the far
+   edge of the screen feel like a long way to have come from. Less blur than
+   the first pass, which made them read as smudges rather than clouds. */
+.pig__clouds{position:absolute;inset:0}
+.pig__clouds--far{animation:pigDriftFar 26s linear infinite;opacity:.5}
+.pig__clouds--near{animation:pigDriftNear 17s linear infinite;opacity:.72}
+
+@keyframes pigDriftFar{from{transform:translateX(0)}to{transform:translateX(-14%)}}
+@keyframes pigDriftNear{from{transform:translateX(0)}to{transform:translateX(-26%)}}
+
+.pig__cloud{
+  position:absolute;
+  width:210px;height:52px;border-radius:52px;
+  background:#FFF3E8;
+  filter:blur(5px);
+  opacity:.9;
+}
+.pig__cloud::before,
+.pig__cloud::after{content:"";position:absolute;background:inherit;border-radius:50%}
+.pig__cloud::before{width:92px;height:92px;left:34px;top:-38px}
+.pig__cloud::after{width:64px;height:64px;right:40px;top:-24px}
+
+/* -- staging --------------------------------------------------------------
+   The eye goes where the contrast is. The first vignette was so faint it did
+   nothing; this one actually corners the attention into the middle, which is
+   where the letter is about to be. */
+.pig__vignette{
+  position:absolute;inset:0;
+  background:radial-gradient(62% 48% at 50% 54%, rgba(0,0,0,0) 42%, rgba(74,36,60,.26) 100%);
+}
+
+/* ==========================================================================
+   THE BIRD
+   --------------------------------------------------------------------------
+   Three nested transforms, deliberately: flight carries it along the arc,
+   bank rolls it into the turn, and the wings beat inside that. One element
+   doing all three would have the flap fighting the path.
+   ======================================================================== */
+
+.pig__flight{
+  position:absolute;left:0;top:0;
+  width:190px;height:142px;
+  animation:pigFlight 3.15s cubic-bezier(.32,.06,.34,1) forwards;
+}
+.pig__bank{
+  width:100%;height:100%;
+  animation:pigBank 3.15s cubic-bezier(.4,0,.3,1) forwards;
+}
+/* A real shadow under it. On a pale sky the bird had almost no separation and
+   kept dissolving into the background. */
+.pig__bird{width:100%;height:100%;display:block;filter:drop-shadow(0 12px 16px rgba(74,36,60,.28))}
+
+/*
+  The path. Six stops rather than two, because an arc needs middles — a
+  two-stop translate is a straight line however it is eased.
+
+  In high and far on the left, sweeping down and across, then a PULL UP at 74%
+  and near-stillness until 82%. That held beat is the anticipation: without it
+  the letter falls out of a moving bird; with it the bird looks like it decided.
+*/
+@keyframes pigFlight{
+  0%   {transform:translate(-16vw, 14vh) scale(.16);opacity:0;filter:blur(2.6px)}
+  10%  {transform:translate(-7vw,  16vh) scale(.2) ;opacity:1;filter:blur(2px)}
+  34%  {transform:translate(14vw,  28vh) scale(.42);filter:blur(.8px)}
+  56%  {transform:translate(36vw,  24vh) scale(.72);filter:blur(0)}
+  74%  {transform:translate(46vw,  16vh) scale(.94);opacity:1}
+  82%  {transform:translate(48vw,  15vh) scale(.96);opacity:1}   /* the held beat */
+  /* Opacity has to be pinned all the way along. With a 1 at 10% and a 0 at
+     100% and nothing between, it interpolates across the WHOLE flight and the
+     bird spends the approach quietly dissolving — it was down to 13% by the
+     time it reached the middle of the screen, which read as washed-out art
+     rather than as the bug it was. It leaves only after the release. */
+  90%  {transform:translate(72vw,   9vh) scale(1);opacity:1}
+  100% {transform:translate(98vw,   2vh) scale(1.02);opacity:0}
+}
+
+@keyframes pigBank{
+  0%   {transform:rotate(6deg)}
+  34%  {transform:rotate(11deg)}
+  56%  {transform:rotate(4deg)}
+  74%  {transform:rotate(-9deg)}   /* nose up to release */
+  82%  {transform:rotate(-7deg)}
+  100% {transform:rotate(-15deg)}  /* away, and climbing */
+}
+
+/* -- wings ----------------------------------------------------------------
+   Not a sine wave. A real downstroke is fast and the recovery is slow, so the
+   keyframes are lopsided: most of the cycle is spent coming back up. The far
+   wing runs slightly behind the near one, which stops the bird reading as a
+   folded piece of paper. */
+.pig__wing{transform-box:fill-box;transform-origin:88% 62%}
+.pig__wing--near{animation:pigFlapNear .26s cubic-bezier(.4,0,.5,1) infinite}
+.pig__wing--far {animation:pigFlapFar  .26s cubic-bezier(.4,0,.5,1) infinite;animation-delay:-.05s}
+
+@keyframes pigFlapNear{
+  0%   {transform:rotate(-40deg) scaleY(.9)}
+  18%  {transform:rotate(36deg)  scaleY(1.08)}  /* fast down */
+  100% {transform:rotate(-40deg) scaleY(.9)}    /* slow recovery */
+}
+@keyframes pigFlapFar{
+  0%   {transform:rotate(-31deg) scaleY(.94)}
+  18%  {transform:rotate(27deg)  scaleY(1.04)}
+  100% {transform:rotate(-31deg) scaleY(.94)}
+}
+
+/* The hand-off: the carried letter disappears on exactly the frame the falling
+   one appears, so there is never one of each on screen. */
+.pig__carry{animation:pigCarry .01s linear 2.62s both}
+@keyframes pigCarry{to{opacity:0}}
+
+/* ==========================================================================
+   THE LETTER
+   --------------------------------------------------------------------------
+   left/top/width are written by JavaScript from the real envelope's rect, so
+   every keyframe here is RELATIVE and the last one is translate(0,0) scale(1)
+   — "exactly where the envelope is". Do not put absolute positions in here.
+   ======================================================================== */
+
+.pig__drop{
+  position:absolute;left:50%;top:34vh;
+  width:min(38vw,150px);
+  margin-left:calc(min(38vw,150px) / -2);
+  /* 2.62s is the END of the held beat in pigFlight — they have to agree.
+     At 2.95s the bird had already flown on and the letter began falling from
+     empty sky several hundred pixels behind it. */
+  animation:pigDrop 1.6s cubic-bezier(.36,0,.28,1) 2.62s both;
+}
+.pig--calm .pig__drop{animation:pigSettle .5s ease-out both}
+.pig__env{width:100%;height:auto;display:block;filter:drop-shadow(0 18px 24px rgba(74,36,60,.26))}
+
+/*
+  The fall and the landing in one timeline, so the squash cannot drift out of
+  sync with the impact.
+
+  Offsets are relative to where it ends up: it starts up and slightly right —
+  roughly under the bird at the moment of release — drifts sideways as paper
+  does, tumbles, and arrives at 0,0. The squash at 68% is the entire reason it
+  feels like it has mass. One bounce, then settle; a second would read as
+  rubber rather than paper.
+*/
+@keyframes pigDrop{
+  0%   {transform:translate(7vw,-30vh) rotate(-18deg) scale(.34);opacity:0}
+  8%   {transform:translate(6vw,-27vh) rotate(-9deg) scale(.4);opacity:1}
+  36%  {transform:translate(1.5vw,-16vh) rotate(15deg) scale(.62)}
+  58%  {transform:translate(-1vw,-6vh) rotate(-6deg) scale(.87)}
+  68%  {transform:translate(0,0) rotate(0deg) scale(1.07,.84)}   /* impact */
+  78%  {transform:translate(0,-3.2vh) rotate(1.5deg) scale(.96,1.06)}  /* the bounce */
+  90%  {transform:translate(0,0) rotate(0deg) scale(1.02,.98)}
+  100% {transform:translate(0,0) rotate(0deg) scale(1)}
+}
+
+/* Reduced motion: it is simply there, and it fades. Nothing crosses the
+   visual field, nothing tumbles, nothing squashes. */
+@keyframes pigSettle{
+  from{transform:translate(0,0) scale(.94);opacity:0}
+  to  {transform:translate(0,0) scale(1);opacity:1}
+}
+
+/* -- dust ----------------------------------------------------------------
+   A child of the letter, so it is automatically wherever the letter landed and
+   cannot drift out of alignment with it. Fires on the impact frame. */
+.pig__drop::after{
+  content:"";
+  position:absolute;left:50%;bottom:-14px;
+  width:132%;height:26px;
+  margin-left:-66%;
+  border-radius:50%;
+  background:radial-gradient(ellipse at center, rgba(255,255,255,.92) 0%, rgba(255,255,255,0) 70%);
+  opacity:0;
+  /* 2.62s + 68% of 1.6s: the impact frame, and it must track the drop delay. */
+  animation:pigPuff .55s ease-out 3.7s both;
+}
+@keyframes pigPuff{
+  0%  {transform:scale(.3);opacity:0}
+  28% {transform:scale(1);opacity:.9}
+  100%{transform:scale(1.75);opacity:0}
+}
+
+/* -- the feather ----------------------------------------------------------
+   The follow-through, and the whole trick. It arrives AFTER everything has
+   stopped, drifting on a lazy S with a slow spin. Impact tells you something
+   hit the ground; the feather tells you something was carrying it. */
+.pig__feather{
+  position:absolute;left:50%;top:14vh;
+  width:15px;
+  margin-left:26px;
+  opacity:0;
+  animation:pigFeather 2.6s cubic-bezier(.42,0,.5,1) 2.72s both;
+}
+.pig__feather svg{width:100%;height:auto;display:block}
+
+@keyframes pigFeather{
+  0%  {transform:translate(0,0) rotate(6deg);opacity:0}
+  12% {opacity:.95}
+  25% {transform:translate(-28px,9vh) rotate(-34deg)}
+  45% {transform:translate(18px,19vh) rotate(31deg)}
+  65% {transform:translate(-15px,29vh) rotate(-23deg)}
+  85% {transform:translate(9px,38vh) rotate(15deg);opacity:.85}
+  100%{transform:translate(3px,45vh) rotate(-4deg);opacity:0}
+}
+
+/* ==========================================================================
+   WORDS AND THE WAY OUT
+   ======================================================================== */
+
+/*
+  The caption lives at the TOP.
+
+  It used to sit under the landing point, where it collided with the card's own
+  "Tap to open" during the crossfade and the two of them overlapped into
+  nonsense. Up here it has the sky to itself, and it leaves before the reveal
+  so nothing is on screen twice.
+*/
+.pig__caption{
+  position:absolute;left:0;right:0;
+  top:max(76px,calc(env(safe-area-inset-top,0px) + 76px));
+  margin:0;padding:0 24px;
+  text-align:center;
+  font-family:var(--font-fraunces),Georgia,serif;
+  font-size:clamp(1.05rem,4.6vw,1.5rem);
+  color:#5A3550;
+  text-shadow:0 1px 10px rgba(255,255,255,.5);
+  opacity:0;
+  animation:pigCaption 3.6s ease-out .55s both;
+}
+.pig--calm .pig__caption{animation:pigCaptionCalm .5s ease-out .1s both}
+
+/* In, hold, and out again before the card is revealed underneath. */
+@keyframes pigCaption{
+  0%  {opacity:0;transform:translateY(10px)}
+  14% {opacity:.94;transform:translateY(0)}
+  72% {opacity:.94;transform:translateY(0)}
+  100%{opacity:0;transform:translateY(-6px)}
+}
+@keyframes pigCaptionCalm{
+  from{opacity:0;transform:translateY(8px)}
+  to  {opacity:.92;transform:translateY(0)}
+}
+
+/* Present from the first frame and reachable by keyboard: somebody who does
+   not want this should not have to work out that tapping anywhere works. */
+.pig__skip{
+  position:absolute;right:16px;
+  top:max(16px,env(safe-area-inset-top,0px));
+  min-height:38px;padding:9px 16px;
+  border:1px solid rgba(74,36,60,.18);border-radius:999px;
+  background:rgba(255,255,255,.78);
+  color:#5A3550;font-size:.78rem;font-weight:800;
+  cursor:pointer;
+  backdrop-filter:blur(6px);
+}
+.pig__skip:hover{background:#fff;color:#3D2137}
+
+/* Nothing behind the scene should scroll while it is up. */
+.pig-locked,.pig-locked body{overflow:hidden!important}
+
+/* Hold the envelope still while the letter is falling towards it.
+
+   There are TWO of them on different elements — envIdle on .env-idle and
+   envBreathe on .env itself, split so the six-second wiggle and the constant
+   breathing never fight over one transform. Suppressing only the wrapper left
+   the inner one still moving, which is how a measured match cut still came out
+   ten pixels wrong twice in a row.
+
+   animation:none rather than paused, because paused freezes wherever it has
+   got to; none puts it at its base pose — the same pose the rect is measured
+   in. All of them resume the moment the sky clears and the class comes off.
+
+   .cardapp is in the list for the same reason and was the one that actually
+   cost the ten pixels: the whole card slides in on overlayIn, so at the moment
+   the rect was taken the entire page was still ten pixels below where it would
+   settle. Re-measuring after fonts.ready did not catch it either, because the
+   fonts land before the slide finishes. Holding the card still is simpler than
+   chasing it, and it is hidden behind the sky regardless. */
+.pig-locked .env-idle,
+.pig-locked .env,
+.pig-locked .cardapp{animation:none!important}
+
+/* Belt and braces. The component checks the same query in JS and swaps to the
+   calm timeline; this catches the setting being changed mid-scene. */
+@media (prefers-reduced-motion:reduce){
+  .pig__flight,.pig__bank,.pig__wing,.pig__feather,
+  .pig__clouds--far,.pig__clouds--near,.pig__drop::after{animation:none!important}
+  .pig__flight,.pig__feather{display:none!important}
+  .pig__drop::after{display:none!important}
+  .pig__drop{animation:pigSettle .45s ease-out both!important}
+}

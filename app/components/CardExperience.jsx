@@ -11,6 +11,7 @@ import { findMyCard } from '@/lib/mycards';
 import { CUTENESS_MAX, cardCutenessStart, cutenessTapStep, cutenessLabel } from '@/lib/cuteness';
 import ShareRow from './ShareRow';
 import KeepCard from './KeepCard';
+import PigeonDelivery from './PigeonDelivery';
 import {
   burstFrom,
   burstGlyphs,
@@ -86,6 +87,14 @@ export default function CardExperience({ card, live = false, initialReactions = 
   }, [live, card.id]);
 
   const [opened, setOpened] = useState(false);
+  /* Scene 0 is still in the air. The envelope underneath is real and tappable
+     the whole time — the delivery is decoration layered over a working page,
+     never a gate in front of one — but the tap hint waits so nobody is invited
+     to press something a pigeon is still carrying. */
+  const [delivering, setDelivering] = useState(true);
+  /* Stable identity: an inline arrow here is a new function on every render,
+     which re-triggers the delivery effect that depends on it. */
+  const stopDelivering = useCallback(() => setDelivering(false), []);
   /* `envDone` = the opening animation has finished. It flips the envelope out
      of its "mid-flight" stacking into a plain, unambiguous one (see .env.is-done
      in globals.css) so the letter can never end up behind the envelope front. */
@@ -393,6 +402,15 @@ export default function CardExperience({ card, live = false, initialReactions = 
         </Link>
       ) : null}
 
+      {/* Scene 0 — the delivery. Sits over the top and lets itself out. */}
+      {!showLetter ? (
+        <PigeonDelivery
+          cardId={resolveCardId(card)}
+          fromName={card.from_name}
+          onDone={stopDelivering}
+        />
+      ) : null}
+
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
         {/* ---------- Scene 1: the envelope ---------- */}
         {!showLetter ? (
@@ -451,7 +469,7 @@ export default function CardExperience({ card, live = false, initialReactions = 
                 ) : null}
               </span>
 
-              <span className="tap-hint" style={{ opacity: opened ? 0 : 1 }}>
+              <span className="tap-hint" style={{ opacity: opened || delivering ? 0 : 1 }}>
                 {occasion.openHint || 'Tap to open 💌'}
               </span>
             </div>
