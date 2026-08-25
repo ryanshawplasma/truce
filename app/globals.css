@@ -2488,6 +2488,74 @@ html[data-appearance="blush"] .appearance__opt--sky{display:none}
   font-size:.66rem;font-weight:700;color:var(--plum-soft);
 }
 .bubble--mine .bubble__time{color:rgba(255,255,255,.8)}
+
+/* ---------- Reactions, unsend, and the ⋯ that reaches them ----------------
+   The bubble is the positioning context so the menu can hang off it. Reactions
+   sit under the words rather than overlapping the corner, because a two-person
+   room never has enough of them to need the crowding trick group chats use. */
+.bubble{position:relative}
+
+.bubble__body--gone{
+  font-style:italic;opacity:.62;
+  /* An unsent message keeps its shape in the thread — it happened, and the gap
+     it leaves is the honest record of that. */
+}
+
+.bubble__reactions{display:flex;flex-wrap:wrap;gap:4px;margin-top:5px}
+.reaction{
+  display:inline-flex;align-items:center;gap:3px;
+  padding:2px 7px;min-height:24px;
+  border:1px solid var(--line);border-radius:999px;
+  background:var(--card);color:var(--ink);
+  font-size:.78rem;line-height:1;cursor:pointer;
+}
+.reaction:hover{border-color:var(--accent-line)}
+.reaction.is-mine{background:var(--accent-chip);border-color:var(--accent-line)}
+.reaction__n{font-size:.66rem;font-weight:800;color:var(--ink-soft)}
+.bubble--mine .reaction{background:rgba(255,255,255,.92);border-color:transparent;color:var(--plum)}
+
+.bubble__tools{position:absolute;top:2px;right:4px}
+.bubble--mine .bubble__tools{right:auto;left:4px}
+.bubble__more{
+  opacity:0;
+  display:inline-flex;align-items:center;justify-content:center;
+  width:24px;height:24px;padding:0;
+  border:0;border-radius:50%;
+  background:transparent;color:inherit;
+  font-size:15px;line-height:1;cursor:pointer;
+  transition:opacity .12s ease;
+}
+.bubble:hover .bubble__more,
+.bubble__more:focus-visible,
+.bubble__more[aria-expanded="true"]{opacity:.75}
+.bubble__more:hover{opacity:1}
+/* No hover on a touch screen, so the handle is simply always there. */
+@media (hover:none){.bubble__more{opacity:.55}}
+
+.bubble__menu{
+  position:absolute;top:26px;right:0;z-index:5;
+  display:flex;flex-direction:column;gap:6px;
+  padding:8px;
+  border:1px solid var(--line);border-radius:var(--r-sm);
+  background:var(--card);
+  box-shadow:0 10px 28px rgba(0,0,0,.16);
+}
+.bubble--mine .bubble__menu{right:auto;left:0}
+.bubble__palette{display:flex;gap:2px}
+.bubble__palette-btn{
+  display:inline-flex;align-items:center;justify-content:center;
+  width:34px;height:34px;padding:0;
+  border:0;border-radius:50%;
+  background:transparent;font-size:18px;line-height:1;cursor:pointer;
+}
+.bubble__palette-btn:hover{background:var(--accent-soft)}
+.bubble__unsend{
+  padding:7px 10px;
+  border:0;border-radius:var(--r-sm);
+  background:transparent;color:var(--danger,#B3261E);
+  font-size:.8rem;font-weight:800;text-align:left;cursor:pointer;
+}
+.bubble__unsend:hover{background:var(--accent-soft)}
 .tick{color:rgba(255,255,255,.85);flex:0 0 auto}
 /* The clock spins nothing — it just sits there looking patient. */
 .tick--wait{opacity:.75}

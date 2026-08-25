@@ -157,6 +157,13 @@ create index if not exists couple_messages_room_idx on public.couple_messages (r
 alter table public.couple_rooms add column if not exists delete_asked_1 timestamptz;
 alter table public.couple_rooms add column if not exists delete_asked_2 timestamptz;
 
+-- Reply, reactions and unsend. All three are additive: a corner whose table
+-- predates them keeps working, it just loses those three features until this
+-- runs. See the extrasColumns note in lib/couple.js.
+alter table public.couple_messages add column if not exists reply_to   bigint;
+alter table public.couple_messages add column if not exists reactions  jsonb not null default '{}'::jsonb;
+alter table public.couple_messages add column if not exists deleted_at timestamptz;
+
 
 -- ============================================================================
 -- PHOTOS — one extra step, in the dashboard rather than in SQL
@@ -248,6 +255,13 @@ drop policy if exists "public read couple_messages" on public.couple_messages;
 --
 --   alter table public.couple_rooms add column if not exists delete_asked_1 timestamptz;
 --   alter table public.couple_rooms add column if not exists delete_asked_2 timestamptz;
+--
+-- Reply, reactions and unsend added three more to couple_messages. Without
+-- them the chat still sends and receives; only those features switch off:
+--
+--   alter table public.couple_messages add column if not exists reply_to   bigint;
+--   alter table public.couple_messages add column if not exists reactions  jsonb not null default '{}'::jsonb;
+--   alter table public.couple_messages add column if not exists deleted_at timestamptz;
 --
 -- Everything else in this file is already idempotent, so a fresh paste of the
 -- whole thing is fine too.

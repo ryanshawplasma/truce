@@ -11,10 +11,19 @@ import {
   leaveRoom,
   refreshMedia,
   sendMessage,
+  react as sendReaction,
+  unsend,
 } from '../actions';
 import CloseCorner from './CloseCorner';
 import { daysBetween } from '@/lib/format';
-import { buildRows, clockTime, splitLinks } from '@/lib/chat';
+import {
+  REACTIONS,
+  buildRows,
+  clockTime,
+  normaliseReactions,
+  splitLinks,
+  toggleReactionSet,
+} from '@/lib/chat';
 import { COUPLE_MESSAGE_MAX as MAX_MESSAGE_LENGTH } from '@/lib/constants';
 import {
   MEDIA_ACCEPT,
@@ -65,6 +74,50 @@ export default function CoupleRoom({ room, side, initialMessages = [] }) {
   const [draft, setDraft] = useState('');
   const [note, setNote] = useState('');
   const [sending, setSending] = useState(false);
+
+  /* Reacting has to feel instant — it is a tap, not a send — so the emoji lands
+     locally first and the server confirms after. The same toggle that applied
+     it is what puts it back if the write fails, which works precisely because
+     the operation is its own inverse. */
+  const onReact = useCallback(
+    async (id, emoji) => {
+      const flip = (current) =>
+        current.map((m) => (m.id === id ? { ...m, reactions: toggleReactionSet(m.reactions, emoji, side) } : m));
+
+      setMessages(flip);
+
+      const res = await sendReaction(id, emoji).catch(() => null);
+      if (res && res.ok) {
+        setMessages((current) => current.map((m) => (m.id === id ? { ...m, reactions: res.reactions } : m)));
+        return;
+      }
+
+      setMessages(flip);
+      if (res && res.error) setNote(res.error);
+    },
+    [side],
+  );
+
+  /* Unsend cannot be undone, so it asks first. The row stays in the list as a
+     tombstone rather than vanishing: the poll tracks the highest id it has
+     seen, and a hole in that sequence is how a room starts waiting for a
+     message that is never coming. */
+  const onUnsend = useCallback(async (id) => {
+    if (typeof window !== 'undefined' && !window.confirm('Unsend this message? It goes for both of you.')) return;
+
+    const res = await unsend(id).catch(() => null);
+    if (res && res.ok) {
+      setMessages((current) =>
+        current.map((m) =>
+          m.id === id
+            ? { ...m, body: '', media_path: null, media_url: null, deleted_at: new Date().toISOString() }
+            : m,
+        ),
+      );
+      return;
+    }
+    setNote((res && res.error) || 'Could not unsend that just now.');
+  }, []);
   /* Timestamps and "Today" separators are formatted in the reader's own
      timezone, which the server cannot know — so the list is rendered after
      mount. The messages themselves already arrived with the first response,
@@ -172,7 +225,7 @@ export default function CoupleRoom({ room, side, initialMessages = [] }) {
           return;
         }
         if (res.messages && res.messages.length) {
-          setMessages((current) => merge(current, res.messages));
+          setMessages((current) => applyStates(merge(current, res.messages), res.states));
           highestIdRef.current = res.messages.reduce(
             (max, m) => (m.id > max ? m.id : max),
             highestIdRef.current,
@@ -577,6 +630,9 @@ export default function CoupleRoom({ room, side, initialMessages = [] }) {
                   onOpen={openViewer}
                   onBroken={resign}
                   onShown={onPhotoShown}
+                  onReact={onReact}
+                  onUnsend={onUnsend}
+                  side={side}
                 />
               ),
             )
@@ -696,13 +752,31 @@ export default function CoupleRoom({ room, side, initialMessages = [] }) {
 
 /* ------------------------------------------------------------------ bubbles */
 
-function Bubble({ message, mine, firstOfGroup, lastOfGroup, onOpen, onBroken, onShown }) {
-  const isPhoto = Boolean(message.media_path);
+function Bubble({
+  message,
+  mine,
+  firstOfGroup,
+  lastOfGroup,
+  onOpen,
+  onBroken,
+  onShown,
+  onReact,
+  onUnsend,
+  side,
+}) {
+  const [menuOpen, setMenuOpen] = useState(false);
+  const gone = Boolean(message.deleted_at);
+  const isPhoto = !gone && Boolean(message.media_path);
+  const reactionList = Object.entries(normaliseReactions(message.reactions));
+  /* A message still in the air has no id the server would recognise, so there
+     is nothing yet to react to or unsend. */
+  const actionable = !gone && !message.pending && typeof message.id === 'number';
   const className = [
     'bubble',
     mine ? 'bubble--mine' : '',
     message.pending ? 'is-pending' : '',
     isPhoto ? 'bubble--photo' : '',
+    gone ? 'bubble--gone' : '',
     firstOfGroup ? 'is-first' : '',
     lastOfGroup ? 'is-last' : '',
   ]
@@ -712,11 +786,85 @@ function Bubble({ message, mine, firstOfGroup, lastOfGroup, onOpen, onBroken, on
   return (
     <div className={className}>
       {isPhoto ? <Photo message={message} onOpen={onOpen} onBroken={onBroken} onShown={onShown} /> : null}
-      {message.body ? <p className="bubble__body">{linkify(message.body)}</p> : null}
+
+      {gone ? (
+        <p className="bubble__body bubble__body--gone">Unsent</p>
+      ) : message.body ? (
+        <p className="bubble__body">{linkify(message.body)}</p>
+      ) : null}
+
       <span className="bubble__meta">
         <span className="bubble__time">{clockTime(message.created_at)}</span>
-        {mine ? <Tick pending={message.pending} /> : null}
+        {mine && !gone ? <Tick pending={message.pending} /> : null}
       </span>
+
+      {reactionList.length ? (
+        <span className="bubble__reactions">
+          {reactionList.map(([emoji, sides]) => {
+            const held = sides.includes(side);
+            return (
+              <button
+                key={emoji}
+                type="button"
+                className={held ? 'reaction is-mine' : 'reaction'}
+                onClick={() => onReact && onReact(message.id, emoji)}
+                aria-label={held ? `${emoji} — take yours back` : `${emoji} — add yours`}
+              >
+                <span aria-hidden="true">{emoji}</span>
+                {sides.length > 1 ? <span className="reaction__n">{sides.length}</span> : null}
+              </button>
+            );
+          })}
+        </span>
+      ) : null}
+
+      {actionable ? (
+        <span className="bubble__tools">
+          <button
+            type="button"
+            className="bubble__more"
+            aria-label="Message actions"
+            aria-expanded={menuOpen}
+            onClick={() => setMenuOpen((v) => !v)}
+          >
+            <span aria-hidden="true">⋯</span>
+          </button>
+
+          {menuOpen ? (
+            <span className="bubble__menu">
+              <span className="bubble__palette">
+                {REACTIONS.map((emoji) => (
+                  <button
+                    key={emoji}
+                    type="button"
+                    className="bubble__palette-btn"
+                    aria-label={emoji}
+                    onClick={() => {
+                      setMenuOpen(false);
+                      if (onReact) onReact(message.id, emoji);
+                    }}
+                  >
+                    <span aria-hidden="true">{emoji}</span>
+                  </button>
+                ))}
+              </span>
+
+              {mine ? (
+                <button
+                  type="button"
+                  className="bubble__unsend"
+                  onClick={() => {
+                    setMenuOpen(false);
+                    if (onUnsend) onUnsend(message.id);
+                  }}
+                >
+                  Unsend
+                </button>
+              ) : null}
+            </span>
+          ) : null}
+        </span>
+      ) : null}
     </div>
   );
 }
@@ -1035,6 +1183,42 @@ async function loadImage(file) {
  * A photo without a caption has an empty body, so a pending row is only ever
  * matched against an arriving row of the same kind.
  */
+/**
+ * Fold the other side's reactions and unsends into messages we already hold.
+ *
+ * Returns the SAME array when nothing moved. That matters: this runs on every
+ * four-second poll, and handing React a fresh array each time would re-render
+ * the whole thread — and fight the scroll position — for no reason at all.
+ */
+function applyStates(current, states) {
+  if (!states || !states.length) return current;
+
+  const byId = new Map(states.map((s) => [s.id, s]));
+  let changed = false;
+
+  const next = current.map((m) => {
+    const state = byId.get(m.id);
+    if (!state) return m;
+
+    const reactions = state.reactions || {};
+    const deletedAt = state.deleted_at || null;
+
+    const sameReactions = JSON.stringify(m.reactions || {}) === JSON.stringify(reactions);
+    const sameDeleted = (m.deleted_at || null) === deletedAt;
+    if (sameReactions && sameDeleted) return m;
+
+    changed = true;
+
+    /* An unsend takes the words and the picture with it here too, so a copy of
+       the room that was open when it happened does not keep showing them. */
+    return deletedAt
+      ? { ...m, reactions, deleted_at: deletedAt, body: '', media_path: null, media_url: null, local_url: null }
+      : { ...m, reactions, deleted_at: null };
+  });
+
+  return changed ? next : current;
+}
+
 function merge(current, incoming) {
   if (!incoming || !incoming.length) return current;
 

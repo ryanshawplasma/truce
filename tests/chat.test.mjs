@@ -157,3 +157,58 @@ test('splitting is stable when called repeatedly', () => {
   const text = 'a https://example.com b';
   assert.deepEqual(splitLinks(text), splitLinks(text));
 });
+
+/* -- reactions -------------------------------------------------------------
+   The column is jsonb, which means the value is whatever was written there —
+   by this build, an older one, or somebody in the SQL editor. Every test here
+   is about not trusting it. */
+
+const { REACTIONS, isAllowedReaction, normaliseReactions, toggleReactionSet } =
+  await import('../lib/chat.js');
+
+test('pressing an emoji adds you, pressing it again takes you back', () => {
+  const once = toggleReactionSet({}, '❤️', 1);
+  assert.deepEqual(once, { '❤️': [1] });
+
+  const twice = toggleReactionSet(once, '❤️', 1);
+  /* Not an empty array left lying around — the key goes. */
+  assert.deepEqual(twice, {});
+});
+
+test('both sides can hold the same emoji, and the order is stable', () => {
+  const one = toggleReactionSet({}, '😂', 2);
+  const both = toggleReactionSet(one, '😂', 1);
+  assert.deepEqual(both, { '😂': [1, 2] });
+});
+
+test('one side letting go leaves the other holding it', () => {
+  const both = toggleReactionSet({ '👍': [1, 2] }, '👍', 1);
+  assert.deepEqual(both, { '👍': [2] });
+});
+
+test('an emoji outside the palette changes nothing', () => {
+  assert.equal(isAllowedReaction('🦆'), false);
+  assert.deepEqual(toggleReactionSet({ '❤️': [1] }, '🦆', 2), { '❤️': [1] });
+});
+
+test('junk in the column is thrown away, not trusted', () => {
+  /* Every one of these has been a real shape at some point: null columns,
+     a hand-edited row, an array where an object belongs. */
+  assert.deepEqual(normaliseReactions(null), {});
+  assert.deepEqual(normaliseReactions([]), {});
+  assert.deepEqual(normaliseReactions('❤️'), {});
+  assert.deepEqual(normaliseReactions({ '❤️': 'yes' }), {});
+  assert.deepEqual(normaliseReactions({ '🦆': [1] }), {});
+});
+
+test('sides are forced to 1 or 2, and never duplicated', () => {
+  assert.deepEqual(normaliseReactions({ '❤️': [1, 1, 1] }), { '❤️': [1] });
+  assert.deepEqual(normaliseReactions({ '❤️': [3, 0, -1, 99] }), {});
+  /* A string side is what a JSON round-trip through some clients produces. */
+  assert.deepEqual(normaliseReactions({ '❤️': ['2'] }), { '❤️': [2] });
+});
+
+test('the palette is small enough to be a question, not a wall', () => {
+  assert.ok(REACTIONS.length > 0 && REACTIONS.length <= 8);
+  assert.equal(new Set(REACTIONS).size, REACTIONS.length);
+});

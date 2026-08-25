@@ -5,6 +5,7 @@ import { isSupabaseConfigured } from '@/lib/supabase';
 import { currentSession, endSession, startSession, touchSession } from '@/lib/couple-session';
 import { backoffMs, clientKey, sleep, strikeLimit, takeLimit } from '@/lib/throttle';
 import { tidyAndTruncate } from '@/lib/truncate';
+import { isAllowedReaction } from '@/lib/chat';
 import {
   MEDIA_CAPTION_MAX,
   MEDIA_SETUP_MESSAGE,
@@ -22,6 +23,7 @@ import {
   findRoomForClosing,
   insertMessage,
   insertRoom,
+  listMessageStates,
   listMessages,
   listRoomMedia,
   normaliseAnniversary,
@@ -30,6 +32,8 @@ import {
   normaliseSide,
   readDeleteState,
   setDeleteAsk,
+  softDeleteMessage,
+  toggleReaction,
   verifyPassword,
 } from '@/lib/couple';
 
@@ -367,9 +371,14 @@ export async function getMessages(sinceId = 0) {
 
   const since = Number.isFinite(Number(sinceId)) ? Math.max(0, Number(sinceId)) : 0;
   const messages = await listMessages(session.roomId, since);
+  /* Reactions and unsends happen to messages the poll has already seen, so
+     they can never arrive on the `messages` list — that only ever carries
+     what is newer than sinceId. This is how the other side's heart shows up. */
+  const states = await listMessageStates(session.roomId);
+
   /* Signed download URLs are re-minted on every fetch, so they are never older
      than the poll that carried them. */
-  return { ok: true, messages: await attachMediaUrls(messages) };
+  return { ok: true, messages: await attachMediaUrls(messages), states };
 }
 
 /* ------------------------------------------------------------------ photos */
@@ -534,4 +543,61 @@ export async function askToClose(password, withdraw = false) {
   }
 
   return { ...closingPayload(saved.row, session.side), waiting: true };
+}
+
+/* ------------------------------------------------------- react and unsend */
+
+const REACT_SETUP =
+  'Reactions need one more line of setup on this site. The message itself is fine.';
+
+/**
+ * Press or un-press an emoji on a message.
+ *
+ * Both people may react to anything in their own room, including their own
+ * messages — that is how every chat app behaves and there is no reason to be
+ * stricter about a heart than WhatsApp is.
+ *
+ * The emoji is checked against the palette on the way in. Without that, this
+ * action is an arbitrary-string writer into a jsonb column that then renders
+ * in the other person's browser.
+ */
+export async function react(messageId, emoji) {
+  if (!isSupabaseConfigured()) return { ok: false, error: NO_DB };
+
+  const session = await currentSession();
+  if (!session) return { ok: false, error: 'You are signed out — open your corner again.', signedOut: true };
+
+  const id = Number(messageId);
+  if (!Number.isInteger(id) || id <= 0) return { ok: false, error: 'That message is not here any more.' };
+
+  if (!isAllowedReaction(emoji)) return { ok: false, error: 'That is not one of the reactions.' };
+
+  const result = await toggleReaction(session.roomId, id, session.side, emoji);
+  if (result.setup) return { ok: false, setup: true, error: REACT_SETUP };
+  if (result.error) return { ok: false, error: result.error };
+
+  return { ok: true, id, reactions: result.reactions };
+}
+
+/**
+ * Unsend one of your own messages.
+ *
+ * Authorship is decided from the session cookie, never from the caller — the
+ * only thing the browser gets to choose is which id it names, and a message
+ * belonging to the other side is refused by the database layer.
+ */
+export async function unsend(messageId) {
+  if (!isSupabaseConfigured()) return { ok: false, error: NO_DB };
+
+  const session = await currentSession();
+  if (!session) return { ok: false, error: 'You are signed out — open your corner again.', signedOut: true };
+
+  const id = Number(messageId);
+  if (!Number.isInteger(id) || id <= 0) return { ok: false, error: 'That message is not here any more.' };
+
+  const result = await softDeleteMessage(session.roomId, id, session.side);
+  if (result.setup) return { ok: false, setup: true, error: REACT_SETUP };
+  if (result.error) return { ok: false, error: result.error };
+
+  return { ok: true, id };
 }
