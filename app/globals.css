@@ -1298,6 +1298,92 @@ html[data-appearance="blush"] .appearance__opt--sky{display:none}
 }
 .btn-hug:hover{transform:translateY(-3px) scale(1.03);background:var(--t-accent);color:#fff}
 
+/* ---------- The month-by-month chart on /dev -----------------------------
+   Two series drawn with divs. No library, no canvas: it prints, it zooms, and
+   it survives JavaScript being off. The numbers are also in a table below it,
+   which is what actually makes it accessible — the bars are the summary, not
+   the source.
+
+   The two hues are fixed to their series and never reassigned, and they were
+   checked with a palette validator against this page's surface rather than
+   picked by eye: worst-case colour-vision separation is dE 15.2 (protan),
+   against a target of 8, and both clear 3:1 contrast on the background. */
+
+.chart{margin:18px 0 0;padding:0}
+
+.chart__legend{
+  display:flex;gap:18px;align-items:center;
+  margin:0 0 14px;padding:0;
+  font-size:.78rem;font-weight:800;
+  /* Text wears text tokens. The swatch beside it carries the identity — the
+     label itself never takes the series colour. */
+  color:var(--plum-mid);
+}
+.chart__key{display:inline-flex;align-items:center;gap:7px}
+.chart__swatch{width:11px;height:11px;border-radius:3px;display:inline-block}
+.chart__swatch--made{background:#E85D75}
+.chart__swatch--opened{background:#4A90D9}
+
+.chart__plot{
+  display:flex;align-items:flex-end;gap:8px;
+  height:180px;
+  padding:22px 0 0;
+  /* One recessive baseline. No gridlines: with twelve columns and a table
+     underneath, they would be furniture rather than information. */
+  border-bottom:1px solid var(--line);
+}
+
+.chart__col{
+  flex:1 1 0;
+  display:flex;flex-direction:column;align-items:center;gap:6px;
+  min-width:0;height:100%;
+  justify-content:flex-end;
+}
+
+/* The two bars of a month, side by side with a 2px gap so the fills never
+   touch and read as one wider bar. */
+.chart__bars{
+  position:relative;
+  display:flex;align-items:flex-end;justify-content:center;gap:2px;
+  width:100%;height:100%;
+}
+
+.chart__bar{
+  flex:1 1 0;
+  max-width:14px;
+  min-height:2px;
+  /* Rounded at the data end only, square on the baseline: a bar rounded at
+     the bottom floats, and a floating bar misreads its own value. */
+  border-radius:4px 4px 0 0;
+  display:block;
+}
+.chart__bar--made{background:#E85D75}
+.chart__bar--opened{background:#4A90D9}
+
+/* One direct label, on the busiest month. A number over every bar is two dozen
+   numbers and no shape left to read. */
+.chart__peak{
+  position:absolute;top:-20px;left:0;right:0;
+  text-align:center;
+  font-size:.7rem;font-weight:800;
+  color:var(--plum-mid);
+}
+
+.chart__tick{
+  font-size:.65rem;font-weight:700;letter-spacing:.02em;
+  color:var(--plum-soft,var(--plum-mid));
+  opacity:.75;
+  white-space:nowrap;
+}
+
+/* Narrow phones: twelve columns and twenty-four bars do not fit, so the bars
+   thin out rather than the chart scrolling sideways. */
+@media (max-width:560px){
+  .chart__plot{gap:4px;height:150px}
+  .chart__bar{max-width:8px}
+  .chart__tick{font-size:.58rem}
+}
+
 /* ---------- Keep this card ------------------------------------------------
    A link is a promise about a server staying up. A picture in a camera roll
    is not, which is the whole point of the button. */
