@@ -3,6 +3,8 @@ import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { getCardById } from '@/lib/cards';
 import { getOccasion, fill, DEFAULT_OCCASION } from '@/lib/occasions';
+import { cardLook, isNightLook, DEFAULT_LOOK } from '@/lib/palette';
+import { sampleCard } from '@/lib/constants';
 
 /**
  * The picture that unfurls when a card link is pasted into a chat.
@@ -48,6 +50,45 @@ function Mascot({ width, heart = ROSE, tape = CREAM, opacity = 1 }) {
   );
 }
 
+/**
+ * What is pressed into the wax.
+ *
+ * The copy already changed per occasion; the picture never did, so a birthday
+ * and a proposal both unfurled as the same sealed heart. The seal is the one
+ * thing somebody actually looks at in a chat preview, and it is the cheapest
+ * place to say which kind of thing this is before it is opened.
+ *
+ * Drawn rather than typed: Satori has no emoji font, so a 🎂 would come out as
+ * an empty box in the one image a stranger sees.
+ */
+function sealEmblem(occasion, color) {
+  if (occasion === 'birthday') {
+    /* a candle with a flame */
+    return (
+      <g>
+        <rect x="194" y="204" width="12" height="26" rx="5" fill={color} />
+        <path d="M200 186c6 6 8 10 8 13.5a8 8 0 0 1-16 0c0-3.5 2-7.5 8-13.5z" fill={color} />
+      </g>
+    );
+  }
+  if (occasion === 'proposal') {
+    /* a ring with a stone */
+    return (
+      <g>
+        <circle cx="200" cy="220" r="13" fill="none" stroke={color} strokeWidth="6" />
+        <path d="M200 190l9 11h-18z" fill={color} />
+      </g>
+    );
+  }
+  /* sorry, and anything new, keeps the heart */
+  return (
+    <path
+      d="M200 232.5S184 223 184 213.2a7.9 7.9 0 0 1 16-3.4 7.9 7.9 0 0 1 16 3.4c0 9.8-16 19.3-16 19.3z"
+      fill={color}
+    />
+  );
+}
+
 /** A plain little heart, for the confetti scattered around the canvas. */
 function TinyHeart({ size: s, color, opacity, rotate = 0, top, left }) {
   return (
@@ -82,11 +123,15 @@ export default async function OpengraphImage({ params }) {
 
   let toName = '';
   let occasionId = DEFAULT_OCCASION;
+  let themeId = DEFAULT_LOOK;
   try {
     if (id !== 'local') {
-      const card = await getCardById(id);
+      /* The demo card is resolved the same way the page resolves it, so the
+         preview and the card it previews agree about theme and occasion. */
+      const card = id === 'demo' ? sampleCard() : await getCardById(id);
       if (card && card.to_name) toName = String(card.to_name).trim().slice(0, 22);
       if (card && card.occasion) occasionId = card.occasion;
+      if (card && card.theme) themeId = card.theme;
     }
   } catch {
     /* An OG image must never fail loudly — fall back to the generic version. */
@@ -101,6 +146,11 @@ export default async function OpengraphImage({ params }) {
   ]);
 
   /* One line, occasion-appropriate, and never a word of the letter itself. */
+  /* The unfurl now wears the card's own theme. A sky card that previewed as a
+     pink envelope was a small lie about what was inside it. */
+  const look = cardLook(themeId);
+  const night = isNightLook(themeId);
+
   const meta = getOccasion(occasionId).meta;
   const headline = toName ? fill(meta.ogHeadline, { name: toName }) : meta.ogHeadlineFallback;
   /* Two comfortable lines is the goal; step down as the name gets longer. */
@@ -114,7 +164,7 @@ export default async function OpengraphImage({ params }) {
           height: '100%',
           display: 'flex',
           position: 'relative',
-          background: 'linear-gradient(135deg, #FFF4F6 0%, #FFE3E9 44%, #FFD9C4 100%)',
+          background: look.bg,
           fontFamily: 'Nunito',
           overflow: 'hidden',
         }}
@@ -128,7 +178,9 @@ export default async function OpengraphImage({ params }) {
             width: 660,
             height: 660,
             borderRadius: 660,
-            background: 'rgba(255,255,255,0.5)',
+            /* Half-opaque white is a soft glow on a pale sky and a pair of
+               grey blobs on a dark one. */
+            background: night ? 'rgba(255,255,255,0.07)' : 'rgba(255,255,255,0.5)',
             display: 'flex',
           }}
         />
@@ -140,7 +192,7 @@ export default async function OpengraphImage({ params }) {
             width: 620,
             height: 620,
             borderRadius: 620,
-            background: 'rgba(255,255,255,0.34)',
+            background: night ? 'rgba(255,255,255,0.05)' : 'rgba(255,255,255,0.34)',
             display: 'flex',
           }}
         />
@@ -178,7 +230,7 @@ export default async function OpengraphImage({ params }) {
 
             {/* the letter, peeking out of the top */}
             <g transform="rotate(-4 200 76)">
-              <rect x="72" y="4" width="256" height="164" rx="14" fill="#FFFCF9" />
+              <rect x="72" y="4" width="256" height="164" rx="14" fill={look.paper} />
               <rect
                 x="72"
                 y="4"
@@ -186,39 +238,35 @@ export default async function OpengraphImage({ params }) {
                 height="164"
                 rx="14"
                 fill="none"
-                stroke="#F3DCE2"
+                stroke={look.fold}
                 strokeWidth="2"
               />
-              <rect x="100" y="42" width="200" height="10" rx="5" fill="#F2D6DD" />
-              <rect x="100" y="68" width="168" height="10" rx="5" fill="#F2D6DD" />
-              <rect x="100" y="94" width="188" height="10" rx="5" fill="#F2D6DD" />
+              <rect x="100" y="42" width="200" height="10" rx="5" fill={look.fold} opacity="0.55" />
+              <rect x="100" y="68" width="168" height="10" rx="5" fill={look.fold} opacity="0.55" />
+              <rect x="100" y="94" width="188" height="10" rx="5" fill={look.fold} opacity="0.55" />
               <path
                 d="M118 141S104 133 104 124.2a4.4 4.4 0 0 1 14-2.6 4.4 4.4 0 0 1 14 2.6c0 8.8-14 16.8-14 16.8z"
                 fill={ROSE}
                 opacity="0.85"
               />
-              <rect x="146" y="126" width="112" height="9" rx="4.5" fill="#F2D6DD" />
+              <rect x="146" y="126" width="112" height="9" rx="4.5" fill={look.fold} opacity="0.55" />
             </g>
 
             {/* envelope body */}
-            <rect x="8" y="86" width="384" height="212" rx="24" fill="#F7C6D1" />
+            <rect x="8" y="86" width="384" height="212" rx="24" fill={look.envelope} />
             {/* front pocket, with the classic V */}
             <path
               d="M8 106 L200 226 L392 106 L392 274 A24 24 0 0 1 368 298 L32 298 A24 24 0 0 1 8 274 Z"
-              fill="#EFAEBF"
+              fill={look.fold}
             />
             {/* a soft highlight along the left fold */}
             <path d="M8 106 L200 226 L186 236 L8 124 Z" fill="#FFFFFF" opacity="0.22" />
 
             {/* wax seal */}
-            <circle cx="200" cy="216" r="40" fill={ROSE_DEEP} />
-            <circle cx="200" cy="212" r="40" fill={ROSE} />
+            <circle cx="200" cy="216" r="40" fill={look.accentDeep} />
+            <circle cx="200" cy="212" r="40" fill={look.accent} />
             <circle cx="187" cy="199" r="12" fill="#FFFFFF" opacity="0.26" />
-            <path
-              d="M200 232.5S184 223 184 213.2a7.9 7.9 0 0 1 16-3.4 7.9 7.9 0 0 1 16 3.4c0 9.8-16 19.3-16 19.3z"
-              fill="#FFFFFF"
-              opacity="0.92"
-            />
+            <g opacity="0.92">{sealEmblem(occasionId, night ? look.panel : '#FFFFFF')}</g>
           </svg>
         </div>
 
@@ -268,7 +316,10 @@ export default async function OpengraphImage({ params }) {
               fontFamily: 'Fraunces',
               fontSize: headlineSize,
               lineHeight: 1.16,
-              color: PLUM,
+              /* The card's own ink. Hardcoded plum on a moonlight card was
+                 dark text on a dark sky — the headline was very nearly
+                 unreadable, and it is the only sentence in the preview. */
+              color: look.ink,
               fontWeight: 700,
             }}
           >
@@ -280,7 +331,7 @@ export default async function OpengraphImage({ params }) {
               display: 'flex',
               marginTop: 26,
               fontSize: 28,
-              color: PLUM_SOFT,
+              color: look.soft,
               fontWeight: 700,
             }}
           >

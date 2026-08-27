@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { getCardById } from '@/lib/cards';
 import { isSealed, sampleCard } from '@/lib/constants';
 import { getOccasion } from '@/lib/occasions';
+import { cardLook } from '@/lib/palette';
 import {
   KEEPSAKE_HEIGHT,
   KEEPSAKE_MESSAGE_MAX,
@@ -47,58 +48,6 @@ import {
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-/**
- * Theme colours, spelled out.
- *
- * The real values live in app/globals.css under `.themed[data-theme="…"]`, as
- * custom properties — which a renderer with no DOM cannot read. Kept in step
- * with THEMES in lib/constants.js by hand; a theme missing here falls back to
- * blush rather than rendering something unreadable.
- */
-const LOOK = {
-  blush: {
-    bg: 'linear-gradient(160deg,#FFF1F4 0%,#FFD9CC 100%)',
-    panel: '#FFFFFF',
-    ink: '#3D2137',
-    soft: '#8A6A80',
-    accent: '#E85D75',
-  },
-  sky: {
-    bg: 'linear-gradient(160deg,#EAF6FF 0%,#D6ECFF 100%)',
-    panel: '#FFFFFF',
-    ink: '#223A54',
-    soft: '#4A6884',
-    accent: '#4A90D9',
-  },
-  peach: {
-    bg: 'linear-gradient(160deg,#FFF3E7 0%,#FFC9AE 100%)',
-    panel: '#FFFBF7',
-    ink: '#4A2A1E',
-    soft: '#8A6552',
-    accent: '#EF8256',
-  },
-  lavender: {
-    bg: 'linear-gradient(160deg,#F5F0FF 0%,#DCD3F7 100%)',
-    panel: '#FFFFFF',
-    ink: '#2E2247',
-    soft: '#6B5B8E',
-    accent: '#8B6BD6',
-  },
-  moonlight: {
-    bg: 'linear-gradient(160deg,#0F1630 0%,#2A2F58 100%)',
-    panel: '#1A2244',
-    ink: '#F6F8FF',
-    soft: '#A9B8EA',
-    accent: '#A9B8EA',
-  },
-  midnight: {
-    bg: 'linear-gradient(160deg,#2A1B3D 0%,#3A1F3E 100%)',
-    panel: '#3A2A52',
-    ink: '#F7EEF6',
-    soft: '#D9BBD0',
-    accent: '#F2B880',
-  },
-};
 
 /** The bandaged heart. `viewBox` is 24×24, same shape the OG image draws. */
 function Mascot({ width, heart, tape }) {
@@ -137,7 +86,7 @@ export async function GET(request, { params }) {
     return new Response('This one is still sealed.', { status: 403 });
   }
 
-  const look = LOOK[card.theme] || LOOK.blush;
+  const look = cardLook(card.theme);
   const occasion = getOccasion(card.occasion);
 
   const [display, body] = await Promise.all([
