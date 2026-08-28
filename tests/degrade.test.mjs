@@ -375,3 +375,43 @@ test('saving the same words is not an edit, and stamps nothing', async () => {
   /* Writing anyway would stamp "edited" onto a message nobody changed. */
   assert.equal(wrote, false, 'no write happens at all');
 });
+
+/* -- and afterwards, when somebody runs the migration ----------------------
+   The verdict has to be a cache, not a decision. */
+
+test('a column that appears later is noticed without a redeploy', async () => {
+  /* The exact sequence somebody lives through: the corner runs against an old
+     table, a warm instance decides the columns are missing, the SQL is pasted,
+     and that same instance carries on serving. Before this expired, reactions
+     stayed dead in that process forever — the migration succeeded and nothing
+     changed, with nothing in the logs to explain it. */
+  let migrated = false;
+  useFakeSupabase(
+    fakeSupabase({
+      respond: (q) => {
+        const absent = migrated ? [] : NEW;
+        const bad = q.select ? absent.find((c) => String(q.select).includes(c)) : null;
+        if (bad) return { data: null, error: { code: '42703', message: `column couple_messages.${bad} does not exist` } };
+        return { data: [], error: null };
+      },
+    }),
+  );
+
+  const { listMessages, areExtrasMissing, expireMissingFlags } = await freshCouple();
+
+  await listMessages('room00000001', 0);
+  assert.equal(areExtrasMissing(), true, 'starts switched off against the old table');
+
+  /* Somebody pastes the SQL. */
+  migrated = true;
+
+  /* Within the window nothing changes — we are not re-querying on every poll. */
+  expireMissingFlags(Date.now());
+  await listMessages('room00000001', 0);
+  assert.equal(areExtrasMissing(), true, 'still cached a moment later');
+
+  /* Once it lapses, the next read asks for the full list again and finds it. */
+  expireMissingFlags(Date.now() + 6 * 60 * 1000);
+  await listMessages('room00000001', 0);
+  assert.equal(areExtrasMissing(), false, 'picks the columns back up on its own');
+});
