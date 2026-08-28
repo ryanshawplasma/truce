@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { filterMessages } from '../data/library';
+import { isThemeOfferable } from '@/lib/festival';
 import { createCard, getCapabilities } from '../actions';
 import {
   REASONS, STYLES, STYLE_LABEL, THEMES, LIMITS, FEELING_EMOJI, MAX_STICKERS,
@@ -235,6 +236,24 @@ function LinkRow({ label, url, help, tone = 'public' }) {
 export default function Wizard({ onClose, dbEnabled = false, open = true, start = null }) {
   const [data, setData] = useState(EMPTY);
   const [step, setStep] = useState(0);
+
+  /*
+   * Which themes to offer.
+   *
+   * Starts as the permanent ones and gains the seasonal one after mount. The
+   * window is decided from a date, and a server in UTC and a phone in IST do
+   * not always agree about which day it is — so deciding during render would
+   * put one list in the HTML and a different one in the browser a moment
+   * later, which is a hydration mismatch on the busiest screen in the app.
+   *
+   * This only decides what is OFFERED. A card already wearing a seasonal theme
+   * keeps it forever; see lib/festival.js.
+   */
+  const [offerable, setOfferable] = useState(() => THEMES.filter((t) => !t.seasonal));
+
+  useEffect(() => {
+    setOfferable(THEMES.filter((t) => !t.seasonal || isThemeOfferable(t.id)));
+  }, []);
   const [direction, setDirection] = useState(1);
   const [errors, setErrors] = useState({});
   const [busy, setBusy] = useState(false);
@@ -931,7 +950,7 @@ export default function Wizard({ onClose, dbEnabled = false, open = true, start 
           <>
             <Head kicker={kicker} title={copy.themeQ} sub={copy.themeSub} />
             <div className="themes" role="radiogroup" aria-label="Theme">
-              {THEMES.map((t) => (
+              {offerable.map((t) => (
                 <button
                   type="button"
                   key={t.id}
@@ -945,7 +964,10 @@ export default function Wizard({ onClose, dbEnabled = false, open = true, start 
                       <span key={d} className="theme-opt__dot" style={{ background: d }} />
                     ))}
                   </span>
-                  <span className="theme-opt__name">{t.label}</span>
+                  <span className="theme-opt__name">
+                    {t.label}
+                    {t.seasonal ? <span className="theme-opt__limited">Limited</span> : null}
+                  </span>
                 </button>
               ))}
             </div>

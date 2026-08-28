@@ -12,6 +12,7 @@ import { CUTENESS_MAX, cardCutenessStart, cutenessTapStep, cutenessLabel } from 
 import ShareRow from './ShareRow';
 import KeepCard from './KeepCard';
 import PigeonDelivery from './PigeonDelivery';
+import RakhiDecor from './RakhiDecor';
 import { relativeTime } from '@/lib/format';
 import { shouldMentionWait } from '@/lib/waiting';
 import {
@@ -415,6 +416,11 @@ export default function CardExperience({ card, live = false, initialReactions = 
 
   return (
     <div className="cardapp themed" data-theme={card.theme || 'blush'}>
+      {/* Seasonal decoration. Drawn from the card's own theme, so a card made
+          during Raksha Bandhan keeps its rakhi long after the picker has
+          stopped offering one. */}
+      {card.theme === 'rakhi' ? <RakhiDecor /> : null}
+
       {myEntry ? (
         <Link className="creator-banner" href={`/s/${myEntry.editToken}`}>
           <span aria-hidden="true">🔒</span> This is your card — view your private page →
