@@ -41,3 +41,7 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 qa/
+
+# python — the sticker tools in tools/stickers are source; their bytecode is not
+__pycache__/
+*.pyc
