@@ -42,10 +42,13 @@ export default function MakerProvider({ children, dbEnabled = false }) {
   /**
    * `open()` — carry on where they left off.
    * `open('birthday')` — start a birthday card, past the occasion question.
+   * `open('sorry', { theme: 'rakhi' })` — and with a look already chosen, which
+   * is how the festival prompt hands somebody a Rakhi card rather than making
+   * them find the theme themselves six questions later.
    */
-  const open = useCallback((occasion) => {
+  const open = useCallback((occasion, options) => {
     if (typeof occasion === 'string' && occasion) {
-      setStart({ occasion, token: Date.now() });
+      setStart({ occasion, theme: (options && options.theme) || null, token: Date.now() });
     }
     setHasOpened(true);
     setIsOpen(true);

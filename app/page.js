@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import MakerProvider from './components/MakerProvider';
+import RakhiPrompt from './components/RakhiPrompt';
 import Nav from './components/Nav';
 import Footer from './components/Footer';
 import CtaButton from './components/CtaButton';
@@ -31,6 +32,11 @@ export default function HomePage() {
 
   return (
     <MakerProvider dbEnabled={dbEnabled}>
+      {/* Inside the provider so it can open the maker with the theme already
+          chosen. Renders nothing outside the festival window, and nothing at
+          all once somebody has answered it. */}
+      <RakhiPrompt />
+
       <Nav />
 
       <main id="main">

@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { filterMessages } from '../data/library';
 import { isThemeOfferable } from '@/lib/festival';
+import { THEME_IDS } from '@/lib/constants';
 import { createCard, getCapabilities } from '../actions';
 import {
   REASONS, STYLES, STYLE_LABEL, THEMES, LIMITS, FEELING_EMOJI, MAX_STICKERS,
@@ -311,7 +312,11 @@ export default function Wizard({ onClose, dbEnabled = false, open = true, start 
     if (!start || !start.occasion) return;
     if (startedRef.current === start.token) return;
     startedRef.current = start.token;
-    setData({ ...EMPTY, occasion: safeOccasion(start.occasion) });
+    /* A theme can come with the occasion. THEME_IDS is the guard: `start` is
+       built in this app, but it is still a value arriving from elsewhere, and
+       an unknown theme would render as an unstyled card. */
+    const wanted = start.theme && THEME_IDS.includes(start.theme) ? start.theme : EMPTY.theme;
+    setData({ ...EMPTY, occasion: safeOccasion(start.occasion), theme: wanted });
     setResult(null);
     setErrors({});
     setDirection(1);
