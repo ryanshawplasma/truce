@@ -12,12 +12,13 @@
  */
 
 import MESSAGES from './messages';
-import { BIRTHDAY_MESSAGES, PROPOSAL_MESSAGES } from './occasion-messages';
+import { BIRTHDAY_MESSAGES, PROPOSAL_MESSAGES, RAKHI_MESSAGES } from './occasion-messages';
 import { DEFAULT_OCCASION, recipientTagFor } from '@/lib/occasions';
 
 const LIBRARIES = {
   sorry: MESSAGES,
   birthday: BIRTHDAY_MESSAGES,
+  rakhi: RAKHI_MESSAGES,
   proposal: PROPOSAL_MESSAGES,
 };
 

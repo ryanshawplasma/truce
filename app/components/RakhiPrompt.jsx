@@ -67,10 +67,11 @@ export default function RakhiPrompt() {
   const make = useCallback(() => {
     remember();
     setShowing(false);
-    /* Rakhi is a "thinking of you" card rather than an apology, and `sorry` is
-       the only occasion whose questions fit that without asking what somebody
-       did wrong. The theme rides along so the button delivers what it says. */
-    open('sorry', { theme: 'rakhi' });
+    /* Its own occasion, not the apology flow wearing gold.
+       This button used to open 'sorry', which then asked who you wanted to say
+       sorry to and offered Girlfriend and Boyfriend — for a festival about
+       brothers and sisters. A look is not an occasion. */
+    open('rakhi', { theme: 'rakhi' });
   }, [open, remember]);
 
   useEffect(() => {

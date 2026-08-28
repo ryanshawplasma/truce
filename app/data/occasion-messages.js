@@ -65,3 +65,41 @@ export const PROPOSAL_MESSAGES = [
   { t: "I've thought this through completely, and there is no version of my life I want more than the one with you in it. Will you marry me? 💍❤️", s: "heart", who: ["romantic"] },
   { t: "I'm not nervous about much, but I'm nervous about this, because I want the answer more than I've ever wanted anything. Will you be mine? 🥺💍", s: "heart", who: ["romantic"] },
 ];
+
+/**
+ * Raksha Bandhan.
+ *
+ * Written sibling-first, because that is who the festival is about — and
+ * because an occasion with no library of its own silently falls back to the
+ * apology one, which would have offered "I am sorry" to somebody trying to
+ * send their sister a rakhi.
+ *
+ * `who` tags: 'family' covers brother and sister, 'friend' covers the ones who
+ * are siblings by choice rather than by paperwork — which on this festival is a
+ * real category and not a consolation prize.
+ */
+export const RAKHI_MESSAGES = [
+  /* ---- sweet ---- */
+  { t: "Happy Raksha Bandhan. I could not tie it on your wrist this year, so this will have to do the same job: I am on your side, always, no conditions attached. 🪢", s: "sweet", who: ["any"] },
+  { t: "Every year this thread says the same thing, so I will say it out loud too — you are my favourite person to have grown up beside. Happy Rakhi. ❤️", s: "sweet", who: ["family"] },
+  { t: "Distance is the only reason this is a link and not a thread on your wrist. Everything else is exactly the same. Happy Raksha Bandhan. 🧵", s: "sweet", who: ["any"] },
+  { t: "You are not my sibling by paperwork, which somehow makes it count for more. Happy Rakhi — you are stuck with me. 🪢", s: "sweet", who: ["friend"] },
+
+  /* ---- funny ---- */
+  { t: "Happy Raksha Bandhan. Terms and conditions: I still get to annoy you, you still have to answer, and the sweets are non-negotiable. 😅🍬", s: "funny", who: ["any"] },
+  { t: "This rakhi comes with lifetime protection and absolutely no warranty on my life choices. Happy Rakhi. 😅", s: "funny", who: ["family"] },
+  { t: "I have tied you a virtual thread, which cannot be lost, chewed by a dog, or left in a jacket pocket until next August. Progress. 🪢", s: "funny", who: ["any"] },
+  { t: "Legally I am obliged to protect you, and emotionally I am obliged to remind you who broke the good plate in 2009. Happy Raksha Bandhan. 🍬", s: "funny", who: ["family"] },
+
+  /* ---- poetic ---- */
+  { t: "One thread, one knot, one promise — small enough to sit on a wrist and stubborn enough to outlast the year. Happy Raksha Bandhan. 🪢", s: "poetic", who: ["any"] },
+  { t: "Marigolds open, the year turns, and the same quiet vow gets tied again: whatever comes, you will not meet it alone. 🌼", s: "poetic", who: ["any"] },
+  { t: "We were given the same house, the same noise, the same weather — and somehow you turned into the person I trust most. Happy Rakhi. ❤️", s: "poetic", who: ["family"] },
+  { t: "A thread is nothing much. It is what it stands for that has to hold. Mine holds. Happy Raksha Bandhan. 🧵", s: "poetic", who: ["any"] },
+
+  /* ---- from the heart ---- */
+  { t: "Happy Raksha Bandhan. I do not say this properly often enough: whatever it is, whenever it is, call me first. I will be there. 🪢", s: "heart", who: ["any"] },
+  { t: "I am sorry I am not there to do this in person. But the promise is the real part, and that one does not need me in the room. 🧵", s: "heart", who: ["any"] },
+  { t: "You have looked out for me for longer than either of us will admit. This is me saying it goes both ways, and always did. ❤️", s: "heart", who: ["family"] },
+  { t: "No teasing this time. You are one of the best things about my life, and I am proud of you. Happy Raksha Bandhan. 🪢", s: "heart", who: ["any"] },
+];
