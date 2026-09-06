@@ -24,10 +24,30 @@ export const metadata = {
 /* Things that can go wrong between "make our corner" and the room actually
    opening. Each one gets a sentence a person can act on. */
 const DOOR_ERRORS = {
-  cookie:
+  /* The browser genuinely sent nothing back. */
+  nocookie:
     'Your corner was made, but this browser did not keep the sign-in. Enter it below with the same name and password — and check that cookies are allowed for this site.',
+
+  /* A cookie DID come back and its signature did not verify. This one is not
+     the browser's fault at all: it means the key that signs sessions changed
+     between issuing the cookie and reading it back. Adding or changing
+     ADMIN_SECRET in the hosting settings does exactly this, and so does
+     rotating the Supabase service-role key it falls back to when ADMIN_SECRET
+     is unset. Signing in again mints a fresh cookie with whatever key is
+     current, so the second attempt usually sticks. */
+  badtoken:
+    'Your corner was made, but this site could not verify the sign-in it had just issued — which usually means its signing key changed. Enter below with the same name and password; it should stick this time.',
+
+  /* Cookie fine, signature fine, and no such room. */
+  noroom:
+    'Your corner was made, but we cannot find it again. If it was closed from the other device it is gone for good — otherwise enter below and try once more.',
+
   lookup:
     'Your corner was made, but we could not read it back just now. Give it a moment and enter it below.',
+
+  /* Kept so a link from before this split still says something sensible. */
+  cookie:
+    'Your corner was made, but this browser did not keep the sign-in. Enter it below with the same name and password — and check that cookies are allowed for this site.',
 };
 
 export default async function CouplePage({ searchParams }) {

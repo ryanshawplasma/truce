@@ -26,14 +26,17 @@ export default async function CoupleRoomPage({ searchParams }) {
   /* Set by enterRoom() immediately after a successful create or join. */
   const justSignedIn = params.new === '1';
 
-  const { session, failed } = await getSessionState();
+  const { session, reason } = await getSessionState();
 
   if (!session) {
     /* Landing here with no session right after signing in means the corner was
        made but the sign-in did not stick — a cookie the browser refused, or a
        database read that failed a second later. Either way the person needs a
        sentence, not a silent bounce back to an empty form. */
-    if (justSignedIn) redirect(`/couple?err=${failed ? 'lookup' : 'cookie'}`);
+    /* Pass the real reason through. It used to collapse three different
+       failures into "cookie", which blamed the browser for what is usually a
+       server-side signing-secret change. */
+    if (justSignedIn) redirect(`/couple?err=${reason || 'cookie'}`);
     redirect('/couple');
   }
 
