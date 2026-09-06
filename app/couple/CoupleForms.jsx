@@ -1,6 +1,7 @@
 'use client';
 
 import { useRef, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { createRoom, joinRoom } from './actions';
 
 /**
@@ -91,6 +92,7 @@ function JoinForm({ initialError = '' }) {
   const [side, setSide] = useState(1);
   const [error, setError] = useState(initialError);
   const [busy, setBusy] = useState(false);
+  const router = useRouter();
   const busyRef = useRef(false);
 
   const submit = async (e) => {
@@ -103,6 +105,13 @@ function JoinForm({ initialError = '' }) {
       /* On success the action redirects us into the room and never returns a
          value — so the only thing that comes back here is a refusal. */
       const res = await joinRoom({ name: name.trim(), password, side });
+      /* The action sets the cookie and hands back where to go. Navigating
+         here rather than from the server means the browser has already
+         applied the Set-Cookie by the time this request is made. */
+      if (res && res.ok && res.go) {
+        router.push(res.go);
+        return;
+      }
       if (res && !res.ok) setError(res.error || 'That did not work.');
     } catch (err) {
       rethrowIfRedirect(err);
@@ -172,6 +181,7 @@ function CreateForm() {
   const [error, setError] = useState('');
   const [badField, setBadField] = useState('');
   const [busy, setBusy] = useState(false);
+  const router = useRouter();
   const busyRef = useRef(false);
 
   const submit = async (e) => {
@@ -195,6 +205,10 @@ function CreateForm() {
         anniversary: anniversary && anniversary.trim() ? anniversary.trim() : null,
         side,
       });
+      if (res && res.ok && res.go) {
+        router.push(res.go);
+        return;
+      }
       if (res && !res.ok) {
         setError(res.error || 'That did not work.');
         setBadField(res.field || '');

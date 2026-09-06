@@ -46,10 +46,15 @@ export async function GET(request) {
 
     /* Tidy up regardless of the answer — this leaves nothing behind. */
     const body = ok
-      ? 'COOKIES WORK — the cookie was set, survived a redirect, and came back.\n' +
-        'So Set-Cookie is fine on this deployment, and the corner failing to open\n' +
-        'is NOT the browser refusing cookies. It is the signature check: the key\n' +
-        'that signs sessions changed. Check /dev -> Corner sign-in.\n'
+      ? 'COOKIES WORK — set here, survived a 303 redirect, and came back.\n' +
+        '\n' +
+        'What that proves: this browser, these cookie options (httpOnly, lax,\n' +
+        'secure) and this platform are all fine.\n' +
+        '\n' +
+        'What it does NOT prove: this cookie was set by a Route Handler, while\n' +
+        'signing in sets it inside a Server Action — a different mechanism. A\n' +
+        'pass here narrows the problem to that, and does not on its own convict\n' +
+        'the signature check.\n'
       : 'COOKIE LOST — the cookie was set and did not come back after a redirect.\n' +
         'That is the browser or the platform dropping it, not a signing problem.\n' +
         'Private window, a blocker, or a proxy stripping Set-Cookie.\n';

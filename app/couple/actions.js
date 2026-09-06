@@ -117,23 +117,33 @@ async function uniformFail(startedAt, strikes) {
    here: leaveRoom (a button) and enterRoom (via createRoom / joinRoom). */
 
 /**
- * Sign in and go straight to the room.
+ * Sign in, and tell the caller where to go.
  *
- * The redirect is done HERE rather than with router.push() on the client for a
- * reason: the Set-Cookie and the navigation then travel in one response, so the
- * room page can never be asked for before the browser has the session. Doing it
- * client-side raced often enough to matter.
+ * WHY THIS NO LONGER REDIRECTS FROM THE SERVER
+ * --------------------------------------------
+ * It used to call redirect() here so the Set-Cookie and the navigation
+ * travelled in one response. That reasoning is sound and it stopped working:
+ * corners were being created and then refusing to open, reporting a sign-in
+ * the server could not verify.
  *
- * `redirect()` works by throwing, so nothing after it runs and it must not sit
- * inside a try/catch.
+ * A cookie set by a Route Handler survives a 303 on this deployment — tested,
+ * at /couple/cookie-check — so the browser, the cookie options and the
+ * platform are all fine. What is left is this specific combination: a cookie
+ * written with cookies().set() inside a Server Action that is invoked
+ * IMPERATIVELY from an onSubmit handler, and then throws redirect(). The
+ * documented example for this pattern passes the action to a form's `action`
+ * prop, which is not what this form does.
+ *
+ * So the redirect moves to the client. The Set-Cookie rides on this action's
+ * own response, the browser applies it while awaiting, and the navigation that
+ * follows is an ordinary request that carries the cookie. One less mechanism
+ * between writing a cookie and reading it back.
  */
 async function enterRoom(roomId, side) {
   await startSession(roomId, side);
-  /* `?new=1` is a breadcrumb, not state. If the room page finds no session it
-     can tell the difference between "someone typed the URL" (send them to the
-     door quietly) and "we JUST signed them in and the cookie did not survive"
-     — which deserves an explanation instead of a blank form. */
-  redirect('/couple/room?new=1');
+  /* `?new=1` is a breadcrumb, not state: it lets the room page tell "someone
+     typed this URL" apart from "we just signed them in and it did not take". */
+  return { ok: true, go: '/couple/room?new=1' };
 }
 
 export async function leaveRoom() {
@@ -192,7 +202,7 @@ export async function createRoom(input) {
     return { ok: false, error: created.error, field: created.field || 'name' };
   }
 
-  await enterRoom(created.id, side); // throws to redirect — nothing after this runs
+  return enterRoom(created.id, side); // sets the cookie, client navigates
 }
 
 /* ----------------------------------------------------------------- joinRoom */
@@ -248,7 +258,7 @@ export async function joinRoom(input) {
   const good = await verifyPassword(password, room.pass_hash, room.pass_salt);
   if (!good) return fail();
 
-  await enterRoom(room.id, normaliseSide(input && input.side)); // throws to redirect
+  return enterRoom(room.id, normaliseSide(input && input.side)); // sets the cookie, client navigates
 }
 
 /* -------------------------------------------------------------- sendMessage */
