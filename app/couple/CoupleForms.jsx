@@ -1,7 +1,6 @@
 'use client';
 
 import { useRef, useState } from 'react';
-import { useRouter } from 'next/navigation';
 import { createRoom, joinRoom } from './actions';
 
 /**
@@ -92,7 +91,6 @@ function JoinForm({ initialError = '' }) {
   const [side, setSide] = useState(1);
   const [error, setError] = useState(initialError);
   const [busy, setBusy] = useState(false);
-  const router = useRouter();
   const busyRef = useRef(false);
 
   const submit = async (e) => {
@@ -105,11 +103,20 @@ function JoinForm({ initialError = '' }) {
       /* On success the action redirects us into the room and never returns a
          value — so the only thing that comes back here is a refusal. */
       const res = await joinRoom({ name: name.trim(), password, side });
-      /* The action sets the cookie and hands back where to go. Navigating
-         here rather than from the server means the browser has already
-         applied the Set-Cookie by the time this request is made. */
+      /* A FULL page load, not router.push.
+
+         router.push is a client-side navigation, and Next keeps a Client Cache
+         of RSC payloads per route. A failed attempt a minute earlier cached
+         /couple/room as 'bounce back to the door' — and pushing to it can be
+         served that cached answer, cookie or no cookie. Which looks exactly
+         like the sign-in not working, and survives every fix to the cookie
+         itself.
+
+         Signing in happens once and is worth a real request: location.assign
+         bypasses the client cache entirely, sends the cookie the action just
+         set, and leaves no RSC payload to reuse. */
       if (res && res.ok && res.go) {
-        router.push(res.go);
+        window.location.assign(res.go);
         return;
       }
       if (res && !res.ok) setError(res.error || 'That did not work.');
@@ -181,7 +188,6 @@ function CreateForm() {
   const [error, setError] = useState('');
   const [badField, setBadField] = useState('');
   const [busy, setBusy] = useState(false);
-  const router = useRouter();
   const busyRef = useRef(false);
 
   const submit = async (e) => {
@@ -205,8 +211,9 @@ function CreateForm() {
         anniversary: anniversary && anniversary.trim() ? anniversary.trim() : null,
         side,
       });
+      /* Full load, for the same reason as the join form above. */
       if (res && res.ok && res.go) {
-        router.push(res.go);
+        window.location.assign(res.go);
         return;
       }
       if (res && !res.ok) {
