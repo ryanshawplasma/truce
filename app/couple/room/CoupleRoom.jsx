@@ -9,6 +9,7 @@ import {
   getMessages,
   editText,
   getUploadUrl,
+  pingTyping,
   leaveRoom,
   refreshMedia,
   sendMessage,
@@ -22,6 +23,7 @@ import {
   buildRows,
   firstUnreadId,
   clockTime,
+  isTyping,
   lastSeenLabel,
   tickState,
   highlight,
@@ -1036,6 +1038,18 @@ export default function CoupleRoom({ room, side, initialMessages = [] }) {
      it means 'seen' rather than 'fetched'. Reported on the next poll. */
   const readUptoRef = useRef(0);
 
+  /* One ping every three seconds at most, however fast somebody types. The
+     server stores a MOMENT, not a flag, so there is no 'I stopped' to send:
+     it expires on its own after seven seconds. */
+  const typedAtRef = useRef(0);
+  const notifyTyping = useCallback(() => {
+    const now = Date.now();
+    if (now - typedAtRef.current < 3000) return;
+    typedAtRef.current = now;
+    /* Fire and forget. A failed typing ping is not worth a word to anybody. */
+    pingTyping().catch(() => {});
+  }, []);
+
   /* Re-rendered every twenty seconds so 'last seen 4 minutes ago' keeps
      counting between polls instead of freezing at whatever the last one said. */
   const [, setClockTick] = useState(0);
@@ -1076,6 +1090,10 @@ export default function CoupleRoom({ room, side, initialMessages = [] }) {
     }
   }, []);
 
+  /* Typing outranks last seen: it is the more immediate fact, and showing
+     'last seen 2 minutes ago' while somebody is actively typing at you is
+     the sort of detail that makes a room feel dead. */
+  const theyAreTyping = presence ? isTyping(presence.typingAt) : false;
   const seenLabel = presence ? lastSeenLabel(presence.seenAt) : '';
 
   const rows = useMemo(() => buildRows(messages, new Date(), { unreadFrom }), [messages, unreadFrom]);
@@ -1092,7 +1110,14 @@ export default function CoupleRoom({ room, side, initialMessages = [] }) {
               day counter rather than sitting beside it: two small grey lines
               under a name is a stack, not a header — and when somebody is
               actually there, that is the more useful of the two. */}
-          {seenLabel ? (
+          {theyAreTyping ? (
+            <span className="corner__days is-typing">
+              <span className="corner__typing" aria-hidden="true">
+                <i /><i /><i />
+              </span>
+              typing…
+            </span>
+          ) : seenLabel ? (
             <span className={seenLabel === 'online' ? 'corner__days is-online' : 'corner__days'}>
               {seenLabel === 'online' ? <span className="corner__dot" aria-hidden="true" /> : null}
               {seenLabel}
@@ -1386,7 +1411,10 @@ export default function CoupleRoom({ room, side, initialMessages = [] }) {
           placeholder="Say it here…"
           value={draft}
           aria-label="Your message"
-          onChange={(e) => setDraft(e.target.value)}
+          onChange={(e) => {
+            setDraft(e.target.value);
+            if (e.target.value) notifyTyping();
+          }}
           onKeyDown={(e) => {
             /* Enter sends, Shift+Enter makes a new line — phone keyboards send
                a plain Enter, which is what people expect here. */

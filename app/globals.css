@@ -2915,6 +2915,27 @@ html[data-appearance="blush"] .appearance__opt--sky{display:none}
   font-size:.8rem;font-weight:800;text-align:left;cursor:pointer;
 }
 .bubble__unsend:hover{background:var(--accent-soft)}
+/* ---------- Typing --------------------------------------------------------
+   Three dots that rise in sequence. The word is there too: dots alone are a
+   convention, not a label, and somebody meeting them for the first time on a
+   card website should not have to work it out. */
+.corner__days.is-typing{color:var(--accent,#E85D75);font-weight:800}
+.corner__typing{display:inline-flex;align-items:flex-end;gap:3px;margin-right:7px;height:9px}
+.corner__typing i{
+  width:5px;height:5px;border-radius:50%;
+  background:currentColor;display:block;
+  animation:typingBob 1.25s ease-in-out infinite;
+}
+.corner__typing i:nth-child(2){animation-delay:.16s}
+.corner__typing i:nth-child(3){animation-delay:.32s}
+@keyframes typingBob{
+  0%,60%,100%{transform:translateY(0);opacity:.5}
+  30%        {transform:translateY(-4px);opacity:1}
+}
+/* Held still rather than hidden: the words still say typing, and a row of
+   motionless dots beside them reads fine. */
+@media (prefers-reduced-motion:reduce){.corner__typing i{animation:none;opacity:.8}}
+
 /* ---------- Ticks and presence ------------------------------------------
    Blue is doing real work here, so it is the ONE colour in the room that is
    not from the theme: a read receipt that changed hue with the wallpaper

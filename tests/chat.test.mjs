@@ -467,3 +467,33 @@ test('never having seen them says nothing at all', () => {
     assert.equal(lastSeenLabel(bad, BASE), '');
   }
 });
+
+/* -- typing ---------------------------------------------------------------- */
+
+const { TYPING_WINDOW_MS, isTyping } = await import('../lib/chat.js');
+
+test('typing a moment ago counts as typing', () => {
+  assert.equal(isTyping(T(BASE), BASE + 1000), true);
+});
+
+test('typing stops on its own, with nobody sending "I stopped"', () => {
+  /* The point of storing a moment rather than a flag: the browser that would
+     clear a flag is the one that just got closed or lost signal. */
+  assert.equal(isTyping(T(BASE), BASE + TYPING_WINDOW_MS + 1), false);
+});
+
+test('never typed is not typing', () => {
+  for (const bad of [null, undefined, '', 'soon', {}]) {
+    assert.equal(isTyping(bad, BASE), false);
+  }
+});
+
+test('a clock running ahead does not type into next week', () => {
+  assert.equal(isTyping(T(BASE + 60 * 60 * 1000), BASE), false);
+});
+
+test('the window is short enough to feel live and long enough to survive a poll', () => {
+  /* The room polls every four seconds; a window under that would flicker. */
+  assert.ok(TYPING_WINDOW_MS > 4000);
+  assert.ok(TYPING_WINDOW_MS <= 12000);
+});

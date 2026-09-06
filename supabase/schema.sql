@@ -191,6 +191,23 @@ alter table public.couple_messages add column if not exists media_ms integer;
 alter table public.couple_rooms add column if not exists seen_at_1   timestamptz;
 alter table public.couple_rooms add column if not exists seen_at_2   timestamptz;
 alter table public.couple_rooms add column if not exists read_upto_1 bigint;
+
+-- ----------------------------------------------------------------------------
+-- 7. Typing, and a read-receipt switch                        (adds: 4 columns)
+-- ----------------------------------------------------------------------------
+-- typing_at_N   the last moment that side was typing. Read as "typing" only
+--               for a few seconds afterwards, so a closed tab stops typing on
+--               its own rather than typing forever.
+--
+-- receipts_N    whether that side sends read receipts. Reciprocal, the way
+--               WhatsApp does it: switch yours off and you stop seeing theirs.
+--               Defaults to on, which is what the room already did.
+
+alter table public.couple_rooms add column if not exists typing_at_1 timestamptz;
+alter table public.couple_rooms add column if not exists typing_at_2 timestamptz;
+alter table public.couple_rooms add column if not exists receipts_1  boolean not null default true;
+alter table public.couple_rooms add column if not exists receipts_2  boolean not null default true;
+
 alter table public.couple_rooms add column if not exists read_upto_2 bigint;
 
 alter table public.couple_messages add column if not exists edited_at timestamptz;

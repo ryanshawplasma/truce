@@ -35,6 +35,7 @@ import {
   setDeleteAsk,
   editMessage,
   markPresence,
+  markTyping,
   readPresence,
   softDeleteMessage,
   toggleReaction,
@@ -666,4 +667,22 @@ export async function unsend(messageId) {
   if (result.error) return { ok: false, error: result.error };
 
   return { ok: true, id };
+}
+
+/**
+ * Tell the other side you are typing.
+ *
+ * Deliberately the cheapest action in the app: no validation beyond the
+ * session, no return value worth reading, and nothing it can fail at that
+ * anybody needs telling about. A typing indicator that surfaces errors is a
+ * typing indicator nobody wants.
+ */
+export async function pingTyping() {
+  if (!isSupabaseConfigured()) return { ok: false };
+
+  const session = await currentSession();
+  if (!session) return { ok: false };
+
+  await markTyping(session.roomId, session.side);
+  return { ok: true };
 }

@@ -123,10 +123,27 @@ alter table public.couple_rooms add column if not exists seen_at_2   timestamptz
 alter table public.couple_rooms add column if not exists read_upto_1 bigint;
 alter table public.couple_rooms add column if not exists read_upto_2 bigint;
 
+
+-- ----------------------------------------------------------------------------
+-- 7. Typing, and a read-receipt switch                        (adds: 4 columns)
+-- ----------------------------------------------------------------------------
+-- typing_at_N   the last moment that side was typing. Read as "typing" only
+--               for a few seconds afterwards, so a closed tab stops typing on
+--               its own rather than typing forever.
+--
+-- receipts_N    whether that side sends read receipts. Reciprocal, the way
+--               WhatsApp does it: switch yours off and you stop seeing theirs.
+--               Defaults to on, which is what the room already did.
+
+alter table public.couple_rooms add column if not exists typing_at_1 timestamptz;
+alter table public.couple_rooms add column if not exists typing_at_2 timestamptz;
+alter table public.couple_rooms add column if not exists receipts_1  boolean not null default true;
+alter table public.couple_rooms add column if not exists receipts_2  boolean not null default true;
+
 -- ----------------------------------------------------------------------------
 -- Check it worked
 -- ----------------------------------------------------------------------------
--- Should list all twelve of the columns above.
+-- Should list all sixteen of the columns above.
 
 select column_name, data_type
   from information_schema.columns
@@ -135,7 +152,7 @@ select column_name, data_type
         (table_name = 'couple_messages'
          and column_name in ('media_path', 'reply_to', 'reactions', 'deleted_at', 'media_ms', 'edited_at'))
      or (table_name = 'couple_rooms'
-         and column_name in ('delete_asked_1', 'delete_asked_2', 'seen_at_1', 'seen_at_2', 'read_upto_1', 'read_upto_2'))
+         and column_name in ('delete_asked_1', 'delete_asked_2', 'seen_at_1', 'seen_at_2', 'read_upto_1', 'read_upto_2', 'typing_at_1', 'typing_at_2', 'receipts_1', 'receipts_2'))
        )
  order by table_name, column_name;
 
