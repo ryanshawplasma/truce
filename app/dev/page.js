@@ -3,6 +3,7 @@ import Link from 'next/link';
 import BrandMark from '@/app/components/BrandMark';
 import { getAdminStats } from '@/lib/cards';
 import { isSupabaseConfigured } from '@/lib/supabase';
+import { sessionKeyInfo } from '@/lib/couple-session';
 import { relativeTime, absoluteTime } from '@/lib/format';
 import { THEMES } from '@/lib/constants';
 import { humanDuration } from '@/lib/analytics';
@@ -238,6 +239,7 @@ export default async function DevPage({ searchParams }) {
 
   const openRate = stats.cards ? Math.round(((stats.opened || 0) / stats.cards) * 100) : 0;
   const months = stats.monthly || [];
+  const keyInfo = sessionKeyInfo();
 
   return (
     <Shell>
@@ -310,6 +312,24 @@ export default async function DevPage({ searchParams }) {
             <Stat key={t.id} value={(stats.themeCounts || {})[t.id] || 0} label={t.label} />
           ))}
         </div>
+      </div>
+
+      <div className="panel">
+        <h2>Corner sign-in</h2>
+        <p className="panel__sub">
+          What signs the session cookies. Never the secret itself — only whether one
+          is set, because that is the part that explains a corner which is created
+          successfully and then refuses to open.
+        </p>
+        <div className="stat-grid">
+          <Stat value={keyInfo.source} label="Signing key" />
+          <Stat value={keyInfo.stable ? 'Stable' : 'Fragile'} label="Survives key rotation" />
+        </div>
+        {!keyInfo.stable ? (
+          <p className="panel__sub" style={{ marginTop: 14, marginBottom: 0 }}>
+            {keyInfo.note}
+          </p>
+        ) : null}
       </div>
 
       <div className="panel">
