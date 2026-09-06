@@ -173,6 +173,26 @@ alter table public.couple_messages add column if not exists media_ms integer;
 -- When the message was last edited, or NULL if it never was. The bubble says
 -- "edited" off the back of it: a chat where messages change silently is one
 -- where you cannot trust what you remember reading.
+
+-- ----------------------------------------------------------------------------
+-- 6. Ticks and last seen                                      (adds: 4 columns)
+-- ----------------------------------------------------------------------------
+-- One high-water mark per side, rather than a receipt per message per reader.
+--
+-- seen_at_N     the last time that side polled the room. The room polls every
+--               four seconds, so this is both "delivered" and "online".
+-- read_upto_N   the highest message id that side has actually read — written
+--               only when they are at the bottom of the list, not merely when
+--               the poll fetched it.
+--
+-- Two small writes every four seconds instead of a row per message. The blue
+-- tick means exactly what these record and nothing more.
+
+alter table public.couple_rooms add column if not exists seen_at_1   timestamptz;
+alter table public.couple_rooms add column if not exists seen_at_2   timestamptz;
+alter table public.couple_rooms add column if not exists read_upto_1 bigint;
+alter table public.couple_rooms add column if not exists read_upto_2 bigint;
+
 alter table public.couple_messages add column if not exists edited_at timestamptz;
 
 

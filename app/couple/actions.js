@@ -34,6 +34,8 @@ import {
   readDeleteState,
   setDeleteAsk,
   editMessage,
+  markPresence,
+  readPresence,
   softDeleteMessage,
   toggleReaction,
   verifyPassword,
@@ -383,7 +385,7 @@ export async function getUploadUrl(kind = 'photo', audioExt = 'webm') {
 /* -------------------------------------------------------------- getMessages */
 
 /** Everything newer than `sinceId` — this is what the room polls. */
-export async function getMessages(sinceId = 0) {
+export async function getMessages(sinceId = 0, readUpto = 0) {
   if (!isSupabaseConfigured()) return { ok: false, messages: [] };
 
   const session = await currentSession();
@@ -392,6 +394,11 @@ export async function getMessages(sinceId = 0) {
   /* Having the corner open is what keeps it open: the poll that fetches new
      messages is also what rolls the 30 days forward. */
   await touchSession();
+
+  /* The same poll that fetches new messages says "I am here" and "I have read
+     up to this id". One small write every four seconds is what pays for the
+     second tick and for last seen — and it is all either of them ever claims. */
+  await markPresence(session.roomId, session.side, readUpto);
 
   const since = Number.isFinite(Number(sinceId)) ? Math.max(0, Number(sinceId)) : 0;
   const messages = await listMessages(session.roomId, since);
@@ -402,7 +409,12 @@ export async function getMessages(sinceId = 0) {
 
   /* Signed download URLs are re-minted on every fetch, so they are never older
      than the poll that carried them. */
-  return { ok: true, messages: await attachMediaUrls(messages), states };
+  /* The OTHER side's presence, so ticks on your own messages can be told the
+     truth. Null when the columns are not there, which the room reads as "no
+     information" and falls back to a single tick rather than inventing one. */
+  const presence = await readPresence(session.roomId, session.side);
+
+  return { ok: true, messages: await attachMediaUrls(messages), states, presence };
 }
 
 /* ------------------------------------------------------------------ photos */

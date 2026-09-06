@@ -2915,6 +2915,27 @@ html[data-appearance="blush"] .appearance__opt--sky{display:none}
   font-size:.8rem;font-weight:800;text-align:left;cursor:pointer;
 }
 .bubble__unsend:hover{background:var(--accent-soft)}
+/* ---------- Ticks and presence ------------------------------------------
+   Blue is doing real work here, so it is the ONE colour in the room that is
+   not from the theme: a read receipt that changed hue with the wallpaper
+   would stop reading as a status and start reading as decoration. It is the
+   same blue everyone already knows from every other chat app. */
+.tick{opacity:.72;vertical-align:-1px}
+.tick--wait{opacity:.55}
+.tick--read{color:#4FC3F7;opacity:1}
+.bubble--mine .tick--read{color:#8FE3FF}
+
+/* Online: a small live dot beside the words, not instead of them. Colour
+   alone would say nothing to anybody who cannot see green. */
+.corner__dot{
+  display:inline-block;width:7px;height:7px;margin-right:6px;
+  border-radius:50%;background:#3FBF6A;vertical-align:1px;
+  animation:cornerPulse 2.4s ease-in-out infinite;
+}
+.corner__days.is-online{color:#2E9E55;font-weight:800}
+@keyframes cornerPulse{0%,100%{opacity:1}50%{opacity:.45}}
+@media (prefers-reduced-motion:reduce){.corner__dot{animation:none}}
+
 .bubble__reply{
   padding:7px 10px;
   border:0;border-radius:var(--r-sm);

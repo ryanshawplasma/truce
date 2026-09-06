@@ -103,10 +103,30 @@ alter table public.couple_messages add column if not exists media_ms integer;
 alter table public.couple_messages add column if not exists edited_at timestamptz;
 
 
+
+-- ----------------------------------------------------------------------------
+-- 6. Ticks and last seen                                      (adds: 4 columns)
+-- ----------------------------------------------------------------------------
+-- One high-water mark per side, rather than a receipt per message per reader.
+--
+-- seen_at_N     the last time that side polled the room. The room polls every
+--               four seconds, so this is both "delivered" and "online".
+-- read_upto_N   the highest message id that side has actually read — written
+--               only when they are at the bottom of the list, not merely when
+--               the poll fetched it.
+--
+-- Two small writes every four seconds instead of a row per message. The blue
+-- tick means exactly what these record and nothing more.
+
+alter table public.couple_rooms add column if not exists seen_at_1   timestamptz;
+alter table public.couple_rooms add column if not exists seen_at_2   timestamptz;
+alter table public.couple_rooms add column if not exists read_upto_1 bigint;
+alter table public.couple_rooms add column if not exists read_upto_2 bigint;
+
 -- ----------------------------------------------------------------------------
 -- Check it worked
 -- ----------------------------------------------------------------------------
--- Should list all eight of the columns above.
+-- Should list all twelve of the columns above.
 
 select column_name, data_type
   from information_schema.columns
@@ -115,7 +135,7 @@ select column_name, data_type
         (table_name = 'couple_messages'
          and column_name in ('media_path', 'reply_to', 'reactions', 'deleted_at', 'media_ms', 'edited_at'))
      or (table_name = 'couple_rooms'
-         and column_name in ('delete_asked_1', 'delete_asked_2'))
+         and column_name in ('delete_asked_1', 'delete_asked_2', 'seen_at_1', 'seen_at_2', 'read_upto_1', 'read_upto_2'))
        )
  order by table_name, column_name;
 

@@ -22,6 +22,8 @@ import {
   buildRows,
   firstUnreadId,
   clockTime,
+  lastSeenLabel,
+  tickState,
   highlight,
   normaliseReactions,
   searchMessages,
@@ -589,12 +591,18 @@ export default function CoupleRoom({ room, side, initialMessages = [] }) {
     const poll = async () => {
       try {
         /* A poll that never answers must not stop the next one. */
-        const res = await withTimeout(getMessages(highestIdRef.current), 8000, { ok: false, messages: [] });
+        const res = await withTimeout(
+          getMessages(highestIdRef.current, readUptoRef.current),
+          8000,
+          { ok: false, messages: [] },
+        );
         if (!alive) return;
         if (res.signedOut) {
           router.push('/couple');
           return;
         }
+        if (res.presence !== undefined) setPresence(res.presence);
+
         if (res.messages && res.messages.length) {
           setMessages((current) => applyStates(merge(current, res.messages), res.states));
           highestIdRef.current = res.messages.reduce(
@@ -1018,6 +1026,23 @@ export default function CoupleRoom({ room, side, initialMessages = [] }) {
      first thing the room does — so the line would never survive long enough to
      be read. It stays until the corner is opened again. */
   const [unreadFrom, setUnreadFrom] = useState(null);
+
+  /* What the OTHER side has been doing: { seenAt, readUpto }. Null until the
+     first poll answers, and null forever on a database without the columns —
+     which the tick reads as 'no information' rather than as 'not read'. */
+  const [presence, setPresence] = useState(null);
+
+  /* The highest id WE have actually read — only moved when at the bottom, so
+     it means 'seen' rather than 'fetched'. Reported on the next poll. */
+  const readUptoRef = useRef(0);
+
+  /* Re-rendered every twenty seconds so 'last seen 4 minutes ago' keeps
+     counting between polls instead of freezing at whatever the last one said. */
+  const [, setClockTick] = useState(0);
+  useEffect(() => {
+    const t = window.setInterval(() => setClockTick((n) => n + 1), 20000);
+    return () => window.clearInterval(t);
+  }, []);
   const readKeyRef = useRef(`truce.corner.read.${room.id}`);
 
   /* Layout effect, not an effect: scrolling the list to the bottom on mount
@@ -1039,6 +1064,9 @@ export default function CoupleRoom({ room, side, initialMessages = [] }) {
   /* Marking read is cheap and idempotent, so it rides the same moments the room
      already knows about rather than earning its own listener. */
   const markRead = useCallback((id) => {
+    /* Also what the next poll reports to the other side. Same moment, same
+       meaning: reaching the bottom is what 'read' is. */
+    if (typeof id === 'number' && id > readUptoRef.current) readUptoRef.current = id;
     if (typeof id !== 'number' || id <= 0) return;
     try {
       const seen = Number(window.localStorage.getItem(readKeyRef.current)) || 0;
@@ -1047,6 +1075,8 @@ export default function CoupleRoom({ room, side, initialMessages = [] }) {
       /* As above. A corner that cannot remember is still a working corner. */
     }
   }, []);
+
+  const seenLabel = presence ? lastSeenLabel(presence.seenAt) : '';
 
   const rows = useMemo(() => buildRows(messages, new Date(), { unreadFrom }), [messages, unreadFrom]);
 
@@ -1058,7 +1088,16 @@ export default function CoupleRoom({ room, side, initialMessages = [] }) {
             {room.name}
             <BetaChip />
           </span>
-          {days !== null && days >= 0 ? (
+          {/* Their last visit, when there is one to report. It replaces the
+              day counter rather than sitting beside it: two small grey lines
+              under a name is a stack, not a header — and when somebody is
+              actually there, that is the more useful of the two. */}
+          {seenLabel ? (
+            <span className={seenLabel === 'online' ? 'corner__days is-online' : 'corner__days'}>
+              {seenLabel === 'online' ? <span className="corner__dot" aria-hidden="true" /> : null}
+              {seenLabel}
+            </span>
+          ) : days !== null && days >= 0 ? (
             <span className="corner__days">Day {days + 1} together 💙</span>
           ) : (
             <span className="corner__days">just the two of you 💙</span>
@@ -1202,6 +1241,7 @@ export default function CoupleRoom({ room, side, initialMessages = [] }) {
                   onEdit={onEdit}
                   onCopy={onCopy}
                   onJump={jumpTo}
+                  presence={presence}
                   flash={flash === row.message.id}
                   parent={row.message.reply_to ? byId.get(row.message.reply_to) : null}
                   side={side}
@@ -1541,6 +1581,7 @@ function Bubble({
   onEdit,
   onCopy,
   onJump,
+  presence,
   flash,
   parent,
   side,
@@ -1678,7 +1719,7 @@ function Bubble({
             one where you cannot trust what you remember reading. */}
         {message.edited_at && !gone ? <span className="bubble__edited">edited</span> : null}
         <span className="bubble__time">{clockTime(message.created_at)}</span>
-        {mine && !gone ? <Tick pending={message.pending} /> : null}
+        {mine && !gone ? <Tick state={tickState(message, presence || {})} /> : null}
       </span>
 
       {reactionList.length ? (
@@ -1801,8 +1842,32 @@ function Bubble({
  * tracks whether the other person has actually read anything — inventing a
  * "seen" mark would be a lie told in a place where honesty is the whole point.
  */
-function Tick({ pending }) {
-  if (pending) {
+/**
+ * The tick, in four honest states.
+ *
+ * This drew ONE tick for a long time, with a comment saying a "seen" mark we
+ * could not honour would be a lie. That was right: nothing recorded whether
+ * anybody had read anything. The second tick was earned by recording it — see
+ * markPresence in lib/couple.js and tickState in lib/chat.js — not by drawing
+ * another check and hoping.
+ *
+ *   sending    a clock. In flight.
+ *   sent       one tick. The server has it.
+ *   delivered  two ticks. Their browser has fetched since you wrote it.
+ *   read       two blue ticks. Their read mark has passed this message.
+ *
+ * Without the presence columns every message stops at `sent`, which is exactly
+ * where this started and is still true.
+ */
+const TICK_LABEL = {
+  sending: 'Sending',
+  sent: 'Sent',
+  delivered: 'Delivered',
+  read: 'Read',
+};
+
+function Tick({ state = 'sent' }) {
+  if (state === 'sending') {
     return (
       <svg className="tick tick--wait" viewBox="0 0 16 16" width="13" height="13" aria-label="Sending" role="img">
         <circle cx="8" cy="8" r="6.4" fill="none" stroke="currentColor" strokeWidth="1.5" />
@@ -1810,16 +1875,39 @@ function Tick({ pending }) {
       </svg>
     );
   }
+
+  const double = state === 'delivered' || state === 'read';
+
   return (
-    <svg className="tick" viewBox="0 0 16 16" width="13" height="13" aria-label="Sent" role="img">
+    <svg
+      className={`tick${state === 'read' ? ' tick--read' : ''}`}
+      /* Wider box for two ticks so the second one is not clipped. */
+      viewBox={double ? '0 0 22 16' : '0 0 16 16'}
+      width={double ? 18 : 13}
+      height={13}
+      aria-label={TICK_LABEL[state] || 'Sent'}
+      role="img"
+    >
       <path
-        d="M2.6 8.6l3.2 3.2 7.6-7.6"
+        d={double ? 'M1.4 8.6l3.2 3.2 7.6-7.6' : 'M2.6 8.6l3.2 3.2 7.6-7.6'}
         fill="none"
         stroke="currentColor"
         strokeWidth="1.9"
         strokeLinecap="round"
         strokeLinejoin="round"
       />
+      {/* The second tick sits behind and to the right, the way a pair of them
+          overlaps on paper rather than sitting side by side. */}
+      {double ? (
+        <path
+          d="M8.4 11.8l7.6-7.6"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.9"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+      ) : null}
     </svg>
   );
 }

@@ -382,3 +382,88 @@ test('the line is drawn once even if the id appears twice', () => {
 
   assert.equal(rows.filter((r) => r.kind === 'unread').length, 1);
 });
+
+/* -- ticks and presence ----------------------------------------------------
+   The room shipped ONE tick on purpose, with a comment saying a "seen" mark we
+   could not honour would be a lie. These are the tests that make the second
+   tick honest: every state has to be backed by something actually recorded. */
+
+const { ONLINE_WINDOW_MS, lastSeenLabel, tickState } = await import('../lib/chat.js');
+
+const T = (ms) => new Date(ms).toISOString();
+const BASE = 1_700_000_000_000;
+
+test('a message still in flight shows sending', () => {
+  assert.equal(tickState({ id: -1, pending: true, created_at: T(BASE) }, {}), 'sending');
+});
+
+test('on the server, but they have not been back: one tick', () => {
+  assert.equal(tickState({ id: 5, created_at: T(BASE) }, { seenAt: null, readUpto: 0 }), 'sent');
+});
+
+test('their browser has been here since you sent it: delivered', () => {
+  assert.equal(
+    tickState({ id: 5, created_at: T(BASE) }, { seenAt: T(BASE + 1000), readUpto: 0 }),
+    'delivered',
+  );
+});
+
+test('a visit BEFORE the message proves nothing about it', () => {
+  /* The bug this prevents: any past visit marking every future message
+     delivered the instant it is written. */
+  assert.equal(
+    tickState({ id: 5, created_at: T(BASE) }, { seenAt: T(BASE - 60000), readUpto: 0 }),
+    'sent',
+  );
+});
+
+test('their read mark past this message: read', () => {
+  assert.equal(tickState({ id: 5, created_at: T(BASE) }, { seenAt: T(BASE + 1), readUpto: 5 }), 'read');
+  assert.equal(tickState({ id: 5, created_at: T(BASE) }, { seenAt: T(BASE + 1), readUpto: 9 }), 'read');
+});
+
+test('a read mark short of this message is not read', () => {
+  assert.equal(tickState({ id: 9, created_at: T(BASE) }, { seenAt: T(BASE + 1), readUpto: 5 }), 'delivered');
+});
+
+test('read beats delivered even with no presence at all', () => {
+  /* If they have read it, how recently they polled is irrelevant. */
+  assert.equal(tickState({ id: 5, created_at: T(BASE) }, { readUpto: 5 }), 'read');
+});
+
+test('missing or junk presence degrades to one tick, never to a lie', () => {
+  for (const bad of [{}, { seenAt: 'soon', readUpto: 'x' }, { seenAt: null, readUpto: null }]) {
+    assert.equal(tickState({ id: 5, created_at: T(BASE) }, bad), 'sent');
+  }
+  assert.equal(tickState(null, {}), 'sent');
+});
+
+/* -- last seen -------------------------------------------------------------- */
+
+test('a poll within the window reads as online', () => {
+  assert.equal(lastSeenLabel(T(BASE), BASE + ONLINE_WINDOW_MS - 1), 'online');
+});
+
+test('past the window it becomes a time', () => {
+  assert.equal(lastSeenLabel(T(BASE), BASE + 6 * 60000), 'last seen 6 minutes ago');
+  assert.equal(lastSeenLabel(T(BASE), BASE + 60 * 60000), 'last seen an hour ago');
+  assert.equal(lastSeenLabel(T(BASE), BASE + 5 * 60 * 60000), 'last seen 5 hours ago');
+  assert.equal(lastSeenLabel(T(BASE), BASE + 26 * 60 * 60000), 'last seen yesterday');
+  assert.equal(lastSeenLabel(T(BASE), BASE + 3 * 24 * 60 * 60000), 'last seen 3 days ago');
+});
+
+test('singulars read as English, not as "1 minutes ago"', () => {
+  assert.equal(lastSeenLabel(T(BASE), BASE + 61 * 1000), 'last seen a minute ago');
+});
+
+test('a clock running behind says online rather than a time in the future', () => {
+  assert.equal(lastSeenLabel(T(BASE + 90000), BASE), 'online');
+});
+
+test('never having seen them says nothing at all', () => {
+  /* Not "last seen never" — the header stays empty until there is something
+     true to put in it. */
+  for (const bad of [null, undefined, '', 'whenever', {}]) {
+    assert.equal(lastSeenLabel(bad, BASE), '');
+  }
+});
