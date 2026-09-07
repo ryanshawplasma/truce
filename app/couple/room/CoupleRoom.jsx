@@ -187,7 +187,7 @@ export default function CoupleRoom({ room, side, initialMessages = [] }) {
      than losing a sent one. Not persisted while editing — that text belongs to
      a message that already exists, and restoring it into an empty composer
      later would look like a draft they never wrote. */
-  const draftKeyRef = useRef(`truce.corner.draft.${room.id}`);
+  const draftKeyRef = useRef(`truce.corner.draft.${room.name}`); // see readKeyRef
   const draftLoaded = useRef(false);
 
   useEffect(() => {
@@ -538,6 +538,54 @@ export default function CoupleRoom({ room, side, initialMessages = [] }) {
   const highestIdRef = useRef(
     initialMessages.reduce((max, m) => (m.id > max ? m.id : max), 0),
   );
+
+  /* ---------------------------------------------------- how far we have read
+   *
+   * DECLARED HERE, HIGH UP, ON PURPOSE
+   * ----------------------------------
+   * markRead used to live four hundred lines further down, next to the unread
+   * line it feeds. That read beautifully and crashed the room: two hooks up
+   * here name it in their dependency arrays, and a dependency array is
+   * evaluated DURING the render, not later like the callback beside it. So
+   * every single render of every corner threw
+   *
+   *     ReferenceError: Cannot access 'markRead' before initialization
+   *
+   * on the server, the page 500'd, and a corner that had just been created
+   * looked exactly like a sign-in the browser had thrown away. It was not the
+   * cookie. It was never the cookie.
+   *
+   * The lesson worth keeping: a `const` used by anything that runs at render
+   * time — a dep array, a useMemo body, JSX — has to be declared above it.
+   * Grouping by topic is a nice habit that quietly outranks that rule.
+   */
+
+  /* The highest id WE have actually read — only moved when at the bottom, so
+     it means 'seen' rather than 'fetched'. Reported on the next poll. */
+  const readUptoRef = useRef(0);
+
+  /* Keyed by NAME, not id. The room's id never leaves the server — the cookie
+     carries it, signed — so `room.id` was undefined here and every corner on a
+     device shared one key: open a second corner and it inherited the first
+     one's unread line and half-written draft. The name is unique (that is what
+     joining matches on), it is already on screen, and using it sends nothing
+     across the boundary that was not there already. */
+  const readKeyRef = useRef(`truce.corner.read.${room.name}`);
+
+  /* Marking read is cheap and idempotent, so it rides the same moments the room
+     already knows about rather than earning its own listener. */
+  const markRead = useCallback((id) => {
+    /* Also what the next poll reports to the other side. Same moment, same
+       meaning: reaching the bottom is what 'read' is. */
+    if (typeof id === 'number' && id > readUptoRef.current) readUptoRef.current = id;
+    if (typeof id !== 'number' || id <= 0) return;
+    try {
+      const seen = Number(window.localStorage.getItem(readKeyRef.current)) || 0;
+      if (id > seen) window.localStorage.setItem(readKeyRef.current, String(id));
+    } catch {
+      /* Storage blocked. A corner that cannot remember is still a working corner. */
+    }
+  }, []);
 
   const days = useMemo(() => daysBetween(room.anniversary), [room.anniversary]);
 
@@ -1034,10 +1082,6 @@ export default function CoupleRoom({ room, side, initialMessages = [] }) {
      which the tick reads as 'no information' rather than as 'not read'. */
   const [presence, setPresence] = useState(null);
 
-  /* The highest id WE have actually read — only moved when at the bottom, so
-     it means 'seen' rather than 'fetched'. Reported on the next poll. */
-  const readUptoRef = useRef(0);
-
   /* One ping every three seconds at most, however fast somebody types. The
      server stores a MOMENT, not a flag, so there is no 'I stopped' to send:
      it expires on its own after seven seconds. */
@@ -1057,7 +1101,6 @@ export default function CoupleRoom({ room, side, initialMessages = [] }) {
     const t = window.setInterval(() => setClockTick((n) => n + 1), 20000);
     return () => window.clearInterval(t);
   }, []);
-  const readKeyRef = useRef(`truce.corner.read.${room.id}`);
 
   /* Layout effect, not an effect: scrolling the list to the bottom on mount
      dispatches a scroll event, and that handler calls markRead — which would
@@ -1073,21 +1116,6 @@ export default function CoupleRoom({ room, side, initialMessages = [] }) {
     setUnreadFrom(firstUnreadId(messages, stored, side));
     /* Mount only: this is a snapshot of where they left off, not a live view. */
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  /* Marking read is cheap and idempotent, so it rides the same moments the room
-     already knows about rather than earning its own listener. */
-  const markRead = useCallback((id) => {
-    /* Also what the next poll reports to the other side. Same moment, same
-       meaning: reaching the bottom is what 'read' is. */
-    if (typeof id === 'number' && id > readUptoRef.current) readUptoRef.current = id;
-    if (typeof id !== 'number' || id <= 0) return;
-    try {
-      const seen = Number(window.localStorage.getItem(readKeyRef.current)) || 0;
-      if (id > seen) window.localStorage.setItem(readKeyRef.current, String(id));
-    } catch {
-      /* As above. A corner that cannot remember is still a working corner. */
-    }
   }, []);
 
   /* Typing outranks last seen: it is the more immediate fact, and showing
