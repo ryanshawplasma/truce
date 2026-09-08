@@ -415,3 +415,126 @@ test('a column that appears later is noticed without a redeploy', async () => {
   await listMessages('room00000001', 0);
   assert.equal(areExtrasMissing(), false, 'picks the columns back up on its own');
 });
+
+/* -- the half-upgraded room: section 6 run, section 7 not ------------------- */
+
+/**
+ * This is not hypothetical either — it is where this deployment actually was.
+ *
+ * seen_at_N and read_upto_N (section 6) had been pasted; typing_at_N and
+ * receipts_N (section 7) had not. readPresence asked for all nine columns in
+ * one select, PostgREST answered `column couple_rooms.typing_at_1 does not
+ * exist`, and the whole of presence switched itself off — no double ticks and
+ * no "last seen" on a database whose tick columns were present and working.
+ *
+ * The log line then said "run section 6", which had already been run.
+ */
+const SECTION_7 = ['typing_at_1', 'typing_at_2', 'receipts_1', 'receipts_2'];
+
+function roomRow() {
+  return { seen_at_1: 'now', seen_at_2: 'now', read_upto_1: 7, read_upto_2: 9 };
+}
+
+test('ticks and last seen survive a database missing only section 7', async () => {
+  useFakeSupabase(
+    fakeSupabase({ respond: withoutColumns(SECTION_7, () => ({ data: roomRow(), error: null })) }),
+  );
+
+  const { readPresence, isPresenceMissing, isTypingMissing } = await freshCouple();
+  const presence = await readPresence('room00000001', 2);
+
+  assert.ok(presence, 'the poll must come back with something, not null');
+  assert.equal(presence.seenAt, 'now', 'last seen still works');
+  assert.equal(presence.readUpto, 7, 'the blue tick still works');
+
+  /* And the two halves are judged separately. */
+  assert.equal(isTypingMissing(), true, 'section 7 noted as missing');
+  assert.equal(isPresenceMissing(), false, 'section 6 must NOT be condemned with it');
+});
+
+test('the columns that are gone read as their old defaults, not as "off"', async () => {
+  useFakeSupabase(
+    fakeSupabase({ respond: withoutColumns(SECTION_7, () => ({ data: roomRow(), error: null })) }),
+  );
+
+  const { readPresence } = await freshCouple();
+  const presence = await readPresence('room00000001', 2);
+
+  assert.equal(presence.typingAt, null, 'nobody is typing, rather than undefined');
+  assert.equal(presence.receipts, true, 'receipts default to on, as they did before the switch');
+});
+
+test('the retry happens on the same poll, not the next one', async () => {
+  const client = fakeSupabase({
+    respond: withoutColumns(SECTION_7, () => ({ data: roomRow(), error: null })),
+  });
+  useFakeSupabase(client);
+
+  const { readPresence } = await freshCouple();
+  const first = await readPresence('room00000001', 2);
+
+  assert.ok(first, 'the very first poll already returns the ticks');
+  assert.equal(client.calls.length, 2, 'one failed select, then one narrower one');
+  assert.ok(client.calls[1].select.includes('seen_at_1'), 'the retry keeps section 6');
+  assert.ok(!client.calls[1].select.includes('typing_at_1'), 'and drops section 7');
+});
+
+test('once noted, the wider select is not attempted again', async () => {
+  const client = fakeSupabase({
+    respond: withoutColumns(SECTION_7, () => ({ data: roomRow(), error: null })),
+  });
+  useFakeSupabase(client);
+
+  const { readPresence } = await freshCouple();
+  await readPresence('room00000001', 2);
+  const before = client.calls.length;
+  await readPresence('room00000001', 2);
+
+  assert.equal(client.calls.length - before, 1, 'the second poll costs one query, not two');
+});
+
+test('typing being absent never switches the ticks off', async () => {
+  useFakeSupabase(
+    fakeSupabase({ respond: withoutColumns(SECTION_7, () => ({ data: null, error: null })) }),
+  );
+
+  const { markTyping, isPresenceMissing, isTypingMissing } = await freshCouple();
+  await markTyping('room00000001', 1);
+
+  assert.equal(isTypingMissing(), true);
+  assert.equal(isPresenceMissing(), false, 'a failed typing ping must not cost anybody their ticks');
+});
+
+test('a database missing section 6 as well still switches presence off', async () => {
+  const ALL = ['seen_at_1', 'seen_at_2', 'read_upto_1', 'read_upto_2', ...SECTION_7];
+  useFakeSupabase(
+    fakeSupabase({ respond: withoutColumns(ALL, () => ({ data: roomRow(), error: null })) }),
+  );
+
+  const { readPresence, isPresenceMissing } = await freshCouple();
+  const presence = await readPresence('room00000001', 2);
+
+  assert.equal(presence, null, 'no information is the honest answer here');
+  assert.equal(isPresenceMissing(), true);
+});
+
+test('the log names the section that is actually missing', async () => {
+  const said = [];
+  const realError = console.error;
+  console.error = (...args) => said.push(args.join(' '));
+
+  try {
+    useFakeSupabase(
+      fakeSupabase({ respond: withoutColumns(SECTION_7, () => ({ data: roomRow(), error: null })) }),
+    );
+    const { readPresence } = await freshCouple();
+    await readPresence('room00000001', 2);
+  } finally {
+    console.error = realError;
+  }
+
+  const advice = said.filter((line) => /upgrade\.sql/.test(line));
+  assert.equal(advice.length, 1, 'said once, not once per query');
+  assert.match(advice[0], /section 7/, 'points at the section that is missing');
+  assert.doesNotMatch(advice[0], /section 6/, 'and not at the one already run');
+});

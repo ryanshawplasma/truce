@@ -100,6 +100,10 @@ export function fakeSupabase({ respond, storage } = {}) {
           q.filters.push(['not', col, op, val]);
           return api;
         },
+        or(expr) {
+          q.filters.push(['or', expr]);
+          return api;
+        },
         like(col, pattern) {
           q.filters.push(['like', col, pattern]);
           return api;
